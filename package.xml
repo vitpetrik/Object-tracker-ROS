@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>object_tracker</name>
+  <version>0.0.0</version>
+  <description>The object tracker package</description>
+
+  <maintainer email="petrivi2@fel.cvut.cz">Vit Petrik</maintainer>
+ 
+  <license>BSD 3-Clause</license>
+
+
+  <!-- Url tags are optional, but multiple are allowed, one per tag -->
+  <!-- Optional attribute type can be: website, bugtracker, or repository -->
+  <!-- Example: -->
+  <!-- <url type="website">http://wiki.ros.org/uwb_range</url> -->
+
+
+  <!-- Author tags are optional, multiple are allowed, one per tag -->
+  <!-- Authors do not have to be maintainers, but could be -->
+  <!-- Example: -->
+  <!-- <author email="jane.doe@example.com">Jane Doe</author> -->
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>mrs_msgs</depend>
+  <depend>roscpp</depend>
+  <depend>std_msgs</depend>
+  <depend>mrs_lib</depend>
+
+  <depend>tf2_eigen</depend>
+
+
+  <!-- The export tag contains other, unspecified, tags -->
+  <export>
+    <!-- Other tools can request additional information be placed here -->
+
+  </export>
+</package>

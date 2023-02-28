@@ -1,0 +1,30 @@
+<!-- 
+ - @file uwb.launch
+ - @author Vit Petrik (petrivi2@fel.cvut.cz)
+ - @brief Launch nodeleted for Qorvo DW1001 with custom firmware
+ - @version 0.1
+ - @date 2022-11-17
+ - 
+ - @copyright Copyright (c) 2022
+ - 
+-->
+
+<launch>
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav)" />
+  <arg name="name" default="_uwb" />
+  <arg name="profiler" default="$(optenv PROFILER false)" />
+  <arg name="preprocessing" default="1" />
+
+  <group ns="$(arg UAV_NAME)">
+    <!-- <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
+    </node> -->
+
+    <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL object_tracker/poses"/>
+    <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR object_tracker/poses"/>
+    <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB object_tracker/poses"/>
+
+
+    <node name="relay_4" pkg="topic_tools" type="relay" args="uwb_range/distance object_tracker/range"/>
+  </group>
+
+</launch>
