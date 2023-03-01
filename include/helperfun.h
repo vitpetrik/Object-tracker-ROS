@@ -51,11 +51,25 @@ Eigen::VectorXd poseToVector(const geometry_msgs::PoseWithCovarianceStamped &pos
  */
 Eigen::MatrixXd rosCovarianceToEigen(const boost::array<double, 36> input);
 
+boost::array<double, 36> eigenCovarianceToRos(const Eigen::MatrixXd input);
+
 /**
  * @brief further sanitation of the measurment. I don't understand that very much, but it is in fitler.cpp
  * 
  * @param covariance 
  */
-void covarianceSanity(Eigen::MatrixXd &covariance);
+Eigen::Matrix<double, 6, 6> covarianceSanity(Eigen::Matrix<double, 6, 6> covariance);
+
+/**
+ * @brief Returns a value between 0 and 1 representing the level of overlap between two probability distributions in the form of multivariate Gaussians. Multiplying two Gaussians produces another Gaussian, with the value of its peak roughly corresponding to the level of the overlap between the two inputs. The ouptut of this function is the value of such peak, given that the input Gaussians have been scaled s.t. their peaks have the value of 1. Therefore, the output is 1 if the means of both inputs are identical.
+ *
+ * @param si0 The covariance of the first distribution
+ * @param si1 The covariance of the second distribution
+ * @param mu0 The mean of the first distribution
+ * @param mu1 The mean of the second distribution
+ *
+ * @return The level of overlap between the two distribution
+ */
+double gaussJointMaxVal(Eigen::MatrixXd si0, Eigen::MatrixXd si1, Eigen::VectorXd mu0, Eigen::VectorXd mu1);
 
 #endif /* _HELPER_FUN_ */

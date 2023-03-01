@@ -62,6 +62,45 @@ double fixAngle(double origAngle, double newAngle)
 }
 
 /**
+ * @brief Retrieves aviation Roll angle from a quaternion
+ *
+ * @param q The input quaternion
+ *
+ * @return The ouput angle
+ */
+double quatToRoll(Eigen::Quaterniond q)
+{
+    Eigen::Matrix3d m = q.matrix();
+    return atan2(m(2, 1), m(2, 2));
+}
+
+/**
+ * @brief Retrieves aviation Yaw angle from a quaternion
+ *
+ * @param q The input quaternion
+ *
+ * @return The ouput angle
+ */
+double quatToYaw(Eigen::Quaterniond q)
+{
+    Eigen::Matrix3d m = q.matrix();
+    return atan2(m(1, 0), m(0, 0));
+}
+
+/**
+ * @brief Retrieves aviation Pitch angle from a quaternion
+ *
+ * @param q The input quaternion
+ *
+ * @return The ouput angle
+ */
+double quatToPitch(Eigen::Quaterniond q)
+{
+    Eigen::Matrix3d m = q.matrix();
+    return atan2(-m(2, 0), sqrt(m(2, 1) * m(2, 1) + m(2, 2) * m(2, 2)));
+}
+
+/**
  * @brief Convert pose msg to vector of size 6
  *
  * @param pose
@@ -84,20 +123,18 @@ Eigen::VectorXd poseToVector(const geometry_msgs::PoseWithCovarianceStamped &pos
         orientation.y,
         orientation.z);
 
-    auto euler = quaternion.toRotationMatrix().eulerAngles(0, 1, 2);
-
-    pose_vector(3) = fixAngle(euler[0], 0);
-    pose_vector(4) = fixAngle(euler[1], 0);
-    pose_vector(5) = fixAngle(euler[2], 0);
+    pose_vector(3) = fixAngle(quatToRoll(quaternion), 0);
+    pose_vector(4) = fixAngle(quatToPitch(quaternion), 0);
+    pose_vector(5) = fixAngle(quatToYaw(quaternion), 0);
 
     return pose_vector;
 }
 
 /**
  * @brief Reformat ROS format of covariance matrix to matrix format
- * 
- * @param input 
- * @return Eigen::MatrixXd 
+ *
+ * @param input
+ * @return Eigen::MatrixXd
  */
 Eigen::MatrixXd rosCovarianceToEigen(const boost::array<double, 36> input)
 {
@@ -114,15 +151,37 @@ Eigen::MatrixXd rosCovarianceToEigen(const boost::array<double, 36> input)
     return output;
 }
 
+boost::array<double, 36> eigenCovarianceToRos(const Eigen::MatrixXd input)
+{
+    boost::array<double, 36> output;
+    if (((int)(input.rows()) != 6) || ((int)(input.cols()) != 6))
+    {
+        double n = std::nan("");
+        return {n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n};
+    }
+
+    for (int m = 0; m < 6; m++)
+    {
+        for (int n = 0; n < 6; n++)
+        {
+            output[6 * n + m] = input(n, m);
+        }
+    }
+
+    return output;
+}
+
 /**
  * @brief further sanitation of the measurment. I don't understand that very much, but it is in fitler.cpp
- * 
- * @param covariance 
+ *
+ * @param covariance
  */
-void covarianceSanity(Eigen::MatrixXd &covariance)
+Eigen::Matrix<double, 6, 6> covarianceSanity(Eigen::Matrix<double, 6, 6> covariance)
 {
+    Eigen::Matrix<double, 6, 6> P = covariance;
+
     bool changed = false;
-    Eigen::EigenSolver<Eigen::Matrix3d> es(covariance.bottomRightCorner(3, 3));
+    Eigen::EigenSolver<Eigen::Matrix3d> es(P.bottomRightCorner(3, 3));
     auto eigvals = es.eigenvalues();
 
     for (int i = 0; i < (int)(eigvals.size()); i++)
@@ -137,8 +196,41 @@ void covarianceSanity(Eigen::MatrixXd &covariance)
     if (changed)
     {
         auto eigvecs = es.eigenvectors();
-        covariance.bottomRightCorner(3, 3) = eigvecs.real() * eigvals.real().asDiagonal() * eigvecs.real().transpose();
+        P.bottomRightCorner(3, 3) = eigvecs.real() * eigvals.real().asDiagonal() * eigvecs.real().transpose();
     }
 
-    return;
+    return P;
+}
+
+/**
+ * @brief Returns a value between 0 and 1 representing the level of overlap between two probability distributions in the form of multivariate Gaussians. Multiplying two Gaussians produces another Gaussian, with the value of its peak roughly corresponding to the level of the overlap between the two inputs. The ouptut of this function is the value of such peak, given that the input Gaussians have been scaled s.t. their peaks have the value of 1. Therefore, the output is 1 if the means of both inputs are identical.
+ *
+ * @param si0 The covariance of the first distribution
+ * @param si1 The covariance of the second distribution
+ * @param mu0 The mean of the first distribution
+ * @param mu1 The mean of the second distribution
+ *
+ * @return The level of overlap between the two distribution
+ */
+double gaussJointMaxVal(Eigen::MatrixXd si0, Eigen::MatrixXd si1, Eigen::VectorXd mu0, Eigen::VectorXd mu1)
+{
+    bool scaled = true;
+    int k = mu0.size();
+    auto K = si0 * (si0 + si1).inverse();
+    auto d0 = K * (mu1 - mu0);
+    auto d1 = (K - Eigen::MatrixXd::Identity(K.rows(), K.rows())) * (mu1 - mu0);
+    double N;
+
+    if (scaled)
+    {
+        auto N_v = ((-0.5) * ((d0.transpose() * (si0).inverse() * d0) + (d1.transpose() * (si1).inverse() * d1)));
+        N = exp(N_v(0));
+    }
+    else
+    {
+        auto N_v = ((-0.5) * ((d0.transpose() * (si0).inverse() * d0) + (d1.transpose() * (si1).inverse() * d1)));
+        N = (1.0 / pow((2 * M_PI), k) * sqrt((si0).determinant() * (si1).determinant())) * exp(N_v(0));
+    }
+
+    return N;
 }

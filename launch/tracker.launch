@@ -16,8 +16,8 @@
   <arg name="preprocessing" default="1" />
 
   <group ns="$(arg UAV_NAME)">
-    <!-- <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
-    </node> -->
+    <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
+    </node>
 
     <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL object_tracker/poses"/>
     <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR object_tracker/poses"/>
