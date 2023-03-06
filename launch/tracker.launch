@@ -10,13 +10,18 @@
 -->
 
 <launch>
-  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav)" />
-  <arg name="name" default="_uwb" />
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
   <arg name="profiler" default="$(optenv PROFILER false)" />
-  <arg name="preprocessing" default="1" />
+
+  <arg name="output_frame"      default="local_origin"/>
+  <arg name="use_velocity"      default="false"/>
+  <arg name="output_framerate"  default="10"/>
 
   <group ns="$(arg UAV_NAME)">
     <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
+        <param name="uav_name"          value="$(arg uav_name)" />
+        <param name="output_frame"      value="$(arg output_frame)"/>
+        <param name="output_framerate"  value="$(arg output_framerate)" />
     </node>
 
     <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL object_tracker/poses"/>

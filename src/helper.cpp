@@ -151,6 +151,12 @@ Eigen::MatrixXd rosCovarianceToEigen(const boost::array<double, 36> input)
     return output;
 }
 
+/**
+ * @brief Reformat covarince from matrix form to array
+ * 
+ * @param input 
+ * @return boost::array<double, 36> 
+ */
 boost::array<double, 36> eigenCovarianceToRos(const Eigen::MatrixXd input)
 {
     boost::array<double, 36> output;

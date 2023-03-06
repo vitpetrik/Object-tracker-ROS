@@ -12,6 +12,22 @@
 #include "tracker.h"
 #include "helperfun.h"
 
+kalman::range_ukf_t::x_t transition_ukf(const kalman::range_ukf_t::x_t &x, const kalman::range_ukf_t::u_t &, [[maybe_unused]] double dt)
+{
+    return x;
+}
+
+kalman::range_ukf_t::z_t observe_ukf(const kalman::range_ukf_t::x_t &x)
+{
+    kalman::range_ukf_t::z_t z = kalman::range_ukf_t::z_t::Zero();
+
+    z << std::sqrt(x[(int)STATE::X] * x[(int)STATE::X] 
+                + x[(int)STATE::Y] * x[(int)STATE::Y]
+                + x[(int)STATE::Z] * x[(int)STATE::Z]);
+
+    return z;
+}
+
 Eigen::MatrixXd modelMatrix(double dt, int model_type)
 {
     Eigen::MatrixXd model(9, 9);
@@ -127,7 +143,7 @@ Tracker::Tracker(kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::R_t R, int posit
     this->H_matrix(5, (int)STATE::YAW) = 1;
 
     this->pose_lkf = kalman::pose_lkf_t(this->A_matrix, this->B_matrix, this->H_matrix);
-    this->range_ukf = kalman::range_ukf_t();
+    this->range_ukf = kalman::range_ukf_t(transition_ukf, observe_ukf);
 
     this->last_prediction = ros::Time::now();
     this->last_correction = ros::Time::now();
@@ -208,6 +224,38 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::correctPose(ros::Time time, kalman:
     x[(int)STATE::ROLL] = fixAngle(x[(int)STATE::ROLL], 0);
     x[(int)STATE::PITCH] = fixAngle(x[(int)STATE::PITCH], 0);
     x[(int)STATE::YAW] = fixAngle(x[(int)STATE::YAW], 0);
+
+    if (apply_update)
+    {
+        this->state_vector = x;
+        this->covariance = P;
+
+        this->last_correction = time;
+        this->update_count++;
+    }
+
+    return std::make_pair(x, P);
+}
+
+std::pair<kalman::x_t, kalman::P_t> Tracker::correctRange(ros::Time time, kalman::range_ukf_t::z_t z, kalman::range_ukf_t::R_t R, bool apply_update)
+{
+    kalman::x_t x = this->state_vector;
+    kalman::P_t P = this->covariance;
+
+    kalman::range_ukf_t::statecov_t statecov = {x, P, time};
+
+    try
+    {
+        statecov = this->range_ukf.correct(statecov, z, R);
+    }
+    catch ([[maybe_unused]] std::exception &e)
+    {
+        ROS_WARN("Could retrieve matrix inversion");
+        return std::make_pair(x, P);
+    }
+
+    x = statecov.x;
+    P = statecov.P;
 
     if (apply_update)
     {

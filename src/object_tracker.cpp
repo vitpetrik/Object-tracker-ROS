@@ -20,6 +20,7 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 #include <mrs_lib/transformer.h>
+#include <mrs_lib/param_loader.h>
 
 #include "tracker.h"
 #include "helperfun.h"
@@ -34,14 +35,12 @@
 #define MATCH_LEVEL_THRESHOLD_ASSOCIATE 0.3
 #define MATCH_LEVEL_THRESHOLD_REMOVE 0.5
 
-std::string output_frame = "uav1/stable_origin";
-
 std::unordered_map<uint64_t, std::shared_ptr<Tracker>> tracker_map;
 std::unique_ptr<mrs_lib::Transformer> transformer;
 
 ros::Publisher publish_pose;
-ros::Publisher publish_pose_tentative;
 
+std::string output_frame;
 
 void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 {
@@ -87,7 +86,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
         if (not tracker_map.count(measurement.id))
         {
             ROS_INFO("[OBJECT TRACKER] Creating new tracker for object ID: 0x%X", measurement.id);
-            tracker_map[measurement.id] = std::make_shared<Tracker>(pose_vector, covariance, TRANSITION_MODEL_TYPE::CONSTANT_POSITION, TRANSITION_MODEL_TYPE::CONSTANT_POSITION);
+            tracker_map[measurement.id] = std::make_shared<Tracker>(pose_vector, covariance, TRANSITION_MODEL_TYPE::CONSTANT_VELOCITY, TRANSITION_MODEL_TYPE::CONSTANT_POSITION);
         }
 
         auto tracker = tracker_map[measurement.id];
@@ -113,6 +112,15 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
             continue;
 
         auto tracker = tracker_map[measurement.id];
+
+        if (tracker->get_update_count() < MIN_MEASUREMENTS_TO_VALIDATION)
+            continue;
+
+        kalman::range_ukf_t::z_t z(measurement.range.range);  
+        kalman::range_ukf_t::R_t R(measurement.variance);  
+
+        tracker->predict(stamp);
+        tracker->correctRange(stamp, z, R);
     }
 
     return;
@@ -179,35 +187,38 @@ void publishStates()
         temp.pose.orientation.w = quaternion.w();
 
         temp.covariance = eigenCovarianceToRos(P);
-
-        if(tracker->get_update_count() < MIN_MEASUREMENTS_TO_VALIDATION)
-            msg_tent.poses.push_back(temp);
-        else
-            msg.poses.push_back(temp);
+        msg.poses.push_back(temp);
     }
 
     publish_pose.publish(msg);
-    publish_pose_tentative.publish(msg_tent);
-
     return;
 }
 
 int main(int argc, char **argv)
 {
+    std::string uav_name;
+    double output_framerate;
+
     ros::init(argc, argv, "object_tracker");
     ros::NodeHandle nh("~");
 
     ROS_INFO("[OBJECT_TRACKER]: Node set");
 
     transformer = std::make_unique<mrs_lib::Transformer>("OBJECT TRACKER");
+    mrs_lib::ParamLoader param_loader(nh, "Object tracker");
+
+    param_loader.loadParam("uav_name", uav_name);
+    param_loader.loadParam("output_frame", output_frame, std::string("local_origin"));
+    param_loader.loadParam("output_framerate", output_framerate, double(DEFAULT_OUTPUT_FRAMERATE));
+
+    transformer->setDefaultPrefix(uav_name);
 
     ros::Subscriber pose_sub = nh.subscribe("poses", 100, pose_callback);
     ros::Subscriber range_sub = nh.subscribe("range", 100, range_callback);
 
     publish_pose = nh.advertise<mrs_msgs::PoseWithCovarianceArrayStamped>("filtered_poses", 10);
-    publish_pose_tentative = nh.advertise<mrs_msgs::PoseWithCovarianceArrayStamped>("filtered_poses_tantative", 10);
 
-    ros::Rate publish_rate(10);
+    ros::Rate publish_rate(output_framerate);
 
     while (ros::ok())
     {

@@ -74,9 +74,11 @@ public:
 
     ~Tracker();
 
-    std::pair<kalman::x_t, kalman::P_t> predict(ros::Time time, bool apply_update = true);
+    std::pair<kalman::x_t, kalman::P_t> predict(ros::Time, bool apply_update = true);
 
-    std::pair<kalman::x_t, kalman::P_t> correctPose(ros::Time time, kalman::pose_lkf_t::z_t, kalman::pose_lkf_t::R_t, bool apply_update = true);
+    std::pair<kalman::x_t, kalman::P_t> correctPose(ros::Time, kalman::pose_lkf_t::z_t, kalman::pose_lkf_t::R_t, bool apply_update = true);
+
+    std::pair<kalman::x_t, kalman::P_t> correctRange(ros::Time, kalman::range_ukf_t::z_t, kalman::range_ukf_t::R_t, bool apply_update = true);
 
     const auto get_last_correction() const { return last_correction; }
     const auto get_update_count() const { return update_count; }

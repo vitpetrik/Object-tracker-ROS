@@ -51,6 +51,12 @@ Eigen::VectorXd poseToVector(const geometry_msgs::PoseWithCovarianceStamped &pos
  */
 Eigen::MatrixXd rosCovarianceToEigen(const boost::array<double, 36> input);
 
+/**
+ * @brief Reformat covarince from matrix form to array
+ * 
+ * @param input 
+ * @return boost::array<double, 36> 
+ */
 boost::array<double, 36> eigenCovarianceToRos(const Eigen::MatrixXd input);
 
 /**
