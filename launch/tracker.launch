@@ -10,23 +10,35 @@
 -->
 
 <launch>
-  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
+  <arg name="uav_name" default="$(optenv UAV_NAME uav1)"/>
   <arg name="profiler" default="$(optenv PROFILER false)" />
 
   <arg name="output_frame"      default="local_origin"/>
   <arg name="use_velocity"      default="false"/>
   <arg name="output_framerate"  default="10"/>
 
-  <group ns="$(arg UAV_NAME)">
+  <group ns="$(arg uav_name)">
     <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
         <param name="output_frame"      value="$(arg output_frame)"/>
         <param name="output_framerate"  value="$(arg output_framerate)" />
+
+        <remap from="~poses" to="~poses"/>
+        <remap from="~range" to="~range"/>
+        <remap from="~filtered_poses" to="~filtered_poses"/>
     </node>
 
-    <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL object_tracker/poses"/>
-    <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR object_tracker/poses"/>
-    <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB object_tracker/poses"/>
+    <node name="transformer" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
+        <param name="uav_name"          value="$(arg uav_name)" />
+        <param name="output_frame"      value="$(arg output_frame)"/>
+
+        <remap from="~poses" to="~poses"/>
+        <remap from="~transformed_poses" to="object_tracker/poses"/>
+    </node>
+
+    <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL transformer/poses"/>
+    <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR transformer/poses"/>
+    <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB transformer/poses"/>
 
 
     <node name="relay_4" pkg="topic_tools" type="relay" args="uwb_range/distance object_tracker/range"/>
