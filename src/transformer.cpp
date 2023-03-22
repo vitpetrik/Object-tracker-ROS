@@ -37,6 +37,12 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
     msg_transformed.header.frame_id = output_frame;
     msg_transformed.header.stamp = stamp;
 
+    if(msg.header.frame_id == output_frame)
+    {
+        publish_transformed.publish(msg);
+        return;
+    }
+
     std::optional<geometry_msgs::TransformStamped> transformation;
     transformation = transformer->getTransform(msg.header.frame_id, output_frame, msg.header.stamp);
 
@@ -82,8 +88,8 @@ int main(int argc, char **argv)
 
     ROS_INFO("[TRANSFORMED]: Node set");
 
-    transformer = std::make_unique<mrs_lib::Transformer>("TRANSFORMER");
-    mrs_lib::ParamLoader param_loader(nh, "Transfomer");
+    transformer = std::make_unique<mrs_lib::Transformer>("TRANSFORMER", ros::Duration(0.5));
+    mrs_lib::ParamLoader param_loader(nh, "Transformer");
 
     param_loader.loadParam("uav_name", uav_name);
     param_loader.loadParam("output_frame", output_frame, std::string("local_origin"));
