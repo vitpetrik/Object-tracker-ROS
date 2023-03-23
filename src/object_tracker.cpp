@@ -39,8 +39,12 @@ std::unordered_map<uint64_t, std::shared_ptr<Tracker>> tracker_map;
 std::unique_ptr<mrs_lib::Transformer> transformer;
 
 ros::Publisher publish_pose;
-
 std::string output_frame;
+
+int kalman_pose_model;
+int kalman_rotation_model;
+double spectral_density_pose;
+double spectral_density_rotation;
 
 void publishStates()
 {
@@ -191,7 +195,12 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
         if (not tracker_map.count(measurement.id))
         {
             ROS_INFO("[OBJECT TRACKER] Creating new tracker for object ID: 0x%X", measurement.id);
-            tracker_map[measurement.id] = std::make_shared<Tracker>(pose_vector, covariance, TRANSITION_MODEL_TYPE::CONSTANT_VELOCITY, TRANSITION_MODEL_TYPE::CONSTANT_POSITION);
+            tracker_map[measurement.id] = std::make_shared<Tracker>(pose_vector,
+                                                                    covariance,
+                                                                    kalman_pose_model,
+                                                                    kalman_rotation_model,
+                                                                    spectral_density_pose,
+                                                                    spectral_density_rotation);
         }
 
         auto tracker = tracker_map[measurement.id];
@@ -249,6 +258,11 @@ int main(int argc, char **argv)
     param_loader.loadParam("output_frame", output_frame, std::string("local_origin"));
     param_loader.loadParam("output_framerate", output_framerate, double(DEFAULT_OUTPUT_FRAMERATE));
 
+    param_loader.loadParam("kalman_pose_model", kalman_pose_model);
+    param_loader.loadParam("kalman_rotation_model", kalman_rotation_model);
+    param_loader.loadParam("spectral_density_pose", spectral_density_pose);
+    param_loader.loadParam("spectral_density_rotation", spectral_density_rotation);
+
     transformer->setDefaultPrefix(uav_name);
 
     ros::Subscriber pose_sub = nh.subscribe("poses", 100, pose_callback);
@@ -262,7 +276,6 @@ int main(int argc, char **argv)
     {
         update_trackers();
         publishStates();
-
 
         ros::spinOnce();
         publish_rate.sleep();

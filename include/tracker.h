@@ -70,7 +70,7 @@ class Tracker
 public:
     Tracker();
 
-    Tracker(kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::R_t R, int position_model, int rotation_model);
+    Tracker(kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::R_t R, int position_model, int rotation_model, double spectral_density_pose, double spectral_density_rotation);
 
     ~Tracker();
 
@@ -89,6 +89,9 @@ private:
     int update_count;
     int position_model_type;
     int rotation_model_type;
+
+    double spectral_density_pose;
+    double spectral_density_rotation;
 
     kalman::x_t state_vector;
     kalman::P_t covariance;

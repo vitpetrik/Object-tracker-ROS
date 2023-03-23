@@ -18,11 +18,26 @@
   <arg name="use_velocity"      default="false"/>
   <arg name="output_framerate"  default="10"/>
 
+  <!-- use 0 for constant position
+  use 1 for constant velocity
+  use 2 for constant acceleration -->
+  <arg name="kalman_pose_model" default="0" />
+  <arg name="kalman_rotation_model" default="0" />
+
+  <arg name="spectral_density_pose" default="3" />
+  <arg name="spectral_density_rotation" default="1" />
+
   <group ns="$(arg uav_name)">
     <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
         <param name="output_frame"      value="$(arg kalman_frame)"/>
         <param name="output_framerate"  value="$(arg output_framerate)" />
+
+        <param name="kalman_pose_model" value="$(arg kalman_pose_model)" />
+        <param name="kalman_rotation_model" value="$(arg kalman_rotation_model)" />
+
+        <param name="spectral_density_pose" value="$(arg spectral_density_pose)" />
+        <param name="spectral_density_rotation" value="$(arg spectral_density_rotation)" />
 
         <remap from="~poses" to="~poses"/>
         <remap from="~range" to="~range"/>

@@ -79,27 +79,27 @@ Eigen::MatrixXd Q_continuous_white_noise(int dim, double dt, double spectral_den
     if (dim == TRANSITION_MODEL_TYPE::CONSTANT_POSITION)
     {
         Q_block << dt, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0;
+            0, 0, 0,
+            0, 0, 0;
     }
     else if (dim == TRANSITION_MODEL_TYPE::CONSTANT_VELOCITY)
     {
         Q_block << pow(dt, 3) / 3, pow(dt, 2) / 2, 0,
-                   pow(dt, 2) / 2,             dt, 0,
-                   0,                           0, 0;
+            pow(dt, 2) / 2, dt, 0,
+            0, 0, 0;
     }
     else if (dim == TRANSITION_MODEL_TYPE::CONSTANT_ACCELERATION)
     {
-        Q_block << pow(dt, 5)/20, pow(dt, 4)/8, pow(dt, 3)/6,
-                   pow(dt, 4)/8,  pow(dt, 3)/3, pow(dt, 2)/2,
-                   pow(dt, 3)/6,  pow(dt, 2)/2,           dt;
+        Q_block << pow(dt, 5) / 20, pow(dt, 4) / 8, pow(dt, 3) / 6,
+            pow(dt, 4) / 8, pow(dt, 3) / 3, pow(dt, 2) / 2,
+            pow(dt, 3) / 6, pow(dt, 2) / 2, dt;
     }
 
-    Q.block<3,3>(0, 0) = Q_block;
-    Q.block<3,3>(3, 3) = Q_block;
-    Q.block<3,3>(6, 6) = Q_block;
+    Q.block<3, 3>(0, 0) = Q_block;
+    Q.block<3, 3>(3, 3) = Q_block;
+    Q.block<3, 3>(6, 6) = Q_block;
 
-    return spectral_density*Q;
+    return spectral_density * Q;
 }
 
 kalman::A_t transitionMatrix(double dt, int position_model, int rotation_model)
@@ -112,27 +112,30 @@ kalman::A_t transitionMatrix(double dt, int position_model, int rotation_model)
     return A;
 }
 
-kalman::pose_lkf_t::Q_t processNoiseMatrix(double dt, int position_model, int rotation_model)
+kalman::pose_lkf_t::Q_t processNoiseMatrix(double dt, int position_model, int rotation_model, double spectral_density_pose, double spectral_density_rotation)
 {
     kalman::pose_lkf_t::Q_t Q = kalman::pose_lkf_t::Q_t::Zero();
 
-    Q.topLeftCorner(9, 9) = Q_continuous_white_noise(position_model, dt, 3);
-    Q.bottomRightCorner(9, 9) = Q_continuous_white_noise(rotation_model, dt, 1);
+    Q.topLeftCorner(9, 9) = Q_continuous_white_noise(position_model, dt, spectral_density_pose);
+    Q.bottomRightCorner(9, 9) = Q_continuous_white_noise(rotation_model, dt, spectral_density_rotation);
 
     return Q;
 }
 
 Tracker::Tracker()
 {
-    Tracker(kalman::pose_lkf_t::z_t::Zero(), kalman::pose_lkf_t::R_t::Zero(), TRANSITION_MODEL_TYPE::CONSTANT_POSITION, TRANSITION_MODEL_TYPE::CONSTANT_POSITION);
+    Tracker(kalman::pose_lkf_t::z_t::Zero(), kalman::pose_lkf_t::R_t::Zero(), TRANSITION_MODEL_TYPE::CONSTANT_POSITION, TRANSITION_MODEL_TYPE::CONSTANT_POSITION, 1, 1);
 }
 
-Tracker::Tracker(kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::R_t R, int position_model, int rotation_model)
+Tracker::Tracker(kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::R_t R, int position_model, int rotation_model, double spectral_density_pose, double spectral_density_rotation)
 {
     this->update_count = 0;
 
     this->position_model_type = position_model;
     this->rotation_model_type = rotation_model;
+
+    this->spectral_density_pose = spectral_density_pose;
+    this->spectral_density_rotation = spectral_density_rotation;
 
     this->state_vector = kalman::x_t::Zero();
 
@@ -199,7 +202,7 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time, bool apply_
     this->pose_lkf.A = transitionMatrix(dt, this->position_model_type, this->rotation_model_type);
     kalman::pose_lkf_t::statecov_t statecov = {x, P, time};
 
-    statecov = this->pose_lkf.predict(statecov, kalman::pose_lkf_t::u_t::Zero(), processNoiseMatrix(dt, this->position_model_type, this->rotation_model_type), dt);
+    statecov = this->pose_lkf.predict(statecov, kalman::pose_lkf_t::u_t::Zero(), processNoiseMatrix(dt, this->position_model_type, this->rotation_model_type, this->spectral_density_pose, this->spectral_density_rotation), dt);
     x = statecov.x;
     P = statecov.P;
 
