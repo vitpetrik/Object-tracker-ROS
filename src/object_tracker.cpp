@@ -69,31 +69,7 @@ void publishStates()
         auto x = state.first;
         auto P_full = state.second;
 
-        Eigen::Matrix<double, 6, 6> P = Eigen::Matrix<double, 6, 6>::Zero();
-
-        P(0, 0) = P_full((int)STATE::X, (int)STATE::X);
-        P(0, 1) = P_full((int)STATE::X, (int)STATE::Y);
-        P(0, 2) = P_full((int)STATE::X, (int)STATE::Z);
-
-        P(1, 0) = P_full((int)STATE::Y, (int)STATE::X);
-        P(1, 1) = P_full((int)STATE::Y, (int)STATE::Y);
-        P(1, 2) = P_full((int)STATE::Y, (int)STATE::Z);
-
-        P(2, 0) = P_full((int)STATE::Z, (int)STATE::X);
-        P(2, 1) = P_full((int)STATE::Z, (int)STATE::Y);
-        P(2, 2) = P_full((int)STATE::Z, (int)STATE::Z);
-
-        P(3, 3) = P_full((int)STATE::ROLL, (int)STATE::ROLL);
-        P(3, 4) = P_full((int)STATE::ROLL, (int)STATE::PITCH);
-        P(3, 5) = P_full((int)STATE::ROLL, (int)STATE::YAW);
-
-        P(4, 3) = P_full((int)STATE::PITCH, (int)STATE::ROLL);
-        P(4, 4) = P_full((int)STATE::PITCH, (int)STATE::PITCH);
-        P(4, 5) = P_full((int)STATE::PITCH, (int)STATE::YAW);
-
-        P(5, 3) = P_full((int)STATE::YAW, (int)STATE::ROLL);
-        P(5, 4) = P_full((int)STATE::YAW, (int)STATE::PITCH);
-        P(5, 5) = P_full((int)STATE::YAW, (int)STATE::YAW);
+        Eigen::Matrix<double, 6, 6> P = statecovReduce(x, P_full, 0).second;
 
         pose.id = id;
         pose.pose.position.x = x[(int)STATE::X];

@@ -16,6 +16,38 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h> 
 
 #include <Eigen/Dense>
+#include <ros/ros.h>
+
+
+enum TRANSITION_MODEL_TYPE
+{
+    CONSTANT_POSITION,
+    CONSTANT_VELOCITY,
+    CONSTANT_ACCELERATION
+};
+
+enum class STATE
+{
+    X,
+    X_dt,
+    X_dt2,
+    Y,
+    Y_dt,
+    Y_dt2,
+    Z,
+    Z_dt,
+    Z_dt2,
+    ROLL,
+    ROLL_dt,
+    ROLL_dt2,
+    PITCH,
+    PITCH_dt,
+    PITCH_dt2,
+    YAW,
+    YAW_dt,
+    YAW_dt2,
+    STATES_NUM
+};
 
 /**
  * @brief Convert PoseWithCovarianceIdentified to PoseWithCovarianceStamped
@@ -58,6 +90,15 @@ Eigen::MatrixXd rosCovarianceToEigen(const boost::array<double, 36> input);
  * @return boost::array<double, 36> 
  */
 boost::array<double, 36> eigenCovarianceToRos(const Eigen::MatrixXd input);
+
+/**
+ * @brief return state vector and covariance reduced to order of derivative
+ * 
+ * @param x state vector
+ * @param P Covariance matrix
+ * @return std::pair<Eigen::VectorXd, Eigen::MatrixXd> 
+ */
+std::pair<Eigen::VectorXd, Eigen::MatrixXd> statecovReduce(const Eigen::VectorXd x, const Eigen::MatrixXd P, int order);
 
 /**
  * @brief further sanitation of the measurment. I don't understand that very much, but it is in fitler.cpp
