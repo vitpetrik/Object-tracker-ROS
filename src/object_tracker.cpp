@@ -141,7 +141,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
     for (auto const &measurement : msg.poses)
     {
-        ROS_INFO("[OBJECT TRACKER] Fusing measurment with ID 0x%X", measurement.id);
+        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Fusing measurment with ID 0x%X", measurement.id);
 
         // convert original msg to stamped pose
         auto pose_stamped = poseIdentifiedToPoseStamped(measurement);
@@ -170,7 +170,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
         // create new Tracker instace if not available yet
         if (not tracker_map.count(measurement.id))
         {
-            ROS_INFO("[OBJECT TRACKER] Creating new tracker for object ID: 0x%X", measurement.id);
+            ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Creating new tracker for object ID: 0x%X", measurement.id);
             tracker_map[measurement.id] = std::make_shared<Tracker>(pose_vector,
                                                                     covariance,
                                                                     kalman_pose_model,
@@ -200,7 +200,7 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
         if (not tracker_map.count(measurement.id))
             continue;
 
-        ROS_INFO("[OBJECT TRACKER] Got measurement for ID 0x%X: %.2f m", measurement.id, measurement.range.range);
+        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Got measurement for ID 0x%X: %.2f m", measurement.id, measurement.range.range);
 
         auto tracker = tracker_map[measurement.id];
 
