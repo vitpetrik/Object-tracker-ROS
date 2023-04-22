@@ -177,6 +177,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
                                                                     kalman_rotation_model,
                                                                     spectral_density_pose,
                                                                     spectral_density_rotation);
+            continue;
         }
 
         auto tracker = tracker_map[measurement.id];

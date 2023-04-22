@@ -22,30 +22,23 @@
 enum TRANSITION_MODEL_TYPE
 {
     CONSTANT_POSITION,
-    CONSTANT_VELOCITY,
-    CONSTANT_ACCELERATION
+    CONSTANT_VELOCITY
 };
 
 enum class STATE
 {
     X,
     X_dt,
-    X_dt2,
     Y,
     Y_dt,
-    Y_dt2,
     Z,
     Z_dt,
-    Z_dt2,
     ROLL,
     ROLL_dt,
-    ROLL_dt2,
     PITCH,
     PITCH_dt,
-    PITCH_dt2,
     YAW,
     YAW_dt,
-    YAW_dt2,
     STATES_NUM
 };
 

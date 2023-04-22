@@ -21,7 +21,7 @@
   <!-- use 0 for constant position
   use 1 for constant velocity
   use 2 for constant acceleration -->
-  <arg name="kalman_pose_model" default="0" />
+  <arg name="kalman_pose_model" default="1" />
   <arg name="kalman_rotation_model" default="0" />
 
   <arg name="spectral_density_pose" default="3" />
