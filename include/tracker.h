@@ -9,6 +9,11 @@
  *
  */
 
+#if __INTELLISENSE__
+#undef __ARM_NEON
+#undef __ARM_NEON__
+#endif
+
 #ifndef SRC_OBJECT_TRACKER_INCLUDE_TRACKER
 #define SRC_OBJECT_TRACKER_INCLUDE_TRACKER
 
@@ -21,6 +26,8 @@
 #include <Eigen/Dense>
 
 #include "helperfun.h"
+#include <mrs_lib/transformer.h>
+
 
 namespace kalman
 {
@@ -42,7 +49,7 @@ class Tracker
 public:
     Tracker();
 
-    Tracker(kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::R_t R, int position_model, int rotation_model, double spectral_density_pose, double spectral_density_rotation);
+    Tracker(kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::R_t R, int position_model, int rotation_model, double spectral_density_pose, double spectral_density_rotation, std::shared_ptr<mrs_lib::Transformer> tf_ptr = nullptr);
 
     ~Tracker();
 
@@ -53,9 +60,16 @@ public:
     std::pair<kalman::range_ukf_t::x_t, kalman::range_ukf_t::P_t> correctRange(ros::Time, kalman::range_ukf_t::z_t, kalman::range_ukf_t::R_t, bool apply_update = true);
 
     const auto get_last_correction() const { return last_correction; }
+
     const auto get_update_count() const { return update_count; }
 
+    bool transform(geometry_msgs::TransformStamped transformation);
+
     const std::pair<kalman::x_t, kalman::P_t> get_state() const { return std::make_pair(state_vector, covariance); };
+
+    geometry_msgs::PoseWithCovariance get_PoseWithCovariance();
+
+    geometry_msgs::TwistWithCovariance get_TwistWithCovariance();
 
 private:
     int update_count;
@@ -72,9 +86,10 @@ private:
     kalman::range_ukf_t range_ukf;
     kalman::pose_lkf_t pose_lkf;
 
-
     ros::Time last_prediction;
     ros::Time last_correction;
+
+    std::shared_ptr<mrs_lib::Transformer> transformer;
 };
 
 #endif /* SRC_OBJECT_TRACKER_INCLUDE_TRACKER */

@@ -9,6 +9,11 @@
  *
  */
 
+#if __INTELLISENSE__
+#undef __ARM_NEON
+#undef __ARM_NEON__
+#endif
+
 #include <ros/ros.h>
 #include <ros/package.h>
 
@@ -36,10 +41,11 @@
 #define MATCH_LEVEL_THRESHOLD_REMOVE 0.5
 
 std::unordered_map<uint64_t, std::shared_ptr<Tracker>> tracker_map;
-std::unique_ptr<mrs_lib::Transformer> transformer;
+std::shared_ptr<mrs_lib::Transformer> transformer;
 
 ros::Publisher publish_pose;
-std::string output_frame;
+std::string kalman_frame;
+std::string distance_frame;
 
 int kalman_pose_model;
 int kalman_rotation_model;
@@ -50,13 +56,13 @@ void publishStates()
 {
     mrs_msgs::PoseWithCovarianceArrayStamped msg;
     mrs_msgs::PoseWithCovarianceArrayStamped msg_tent;
-    msg.header.frame_id = output_frame;
+    msg.header.frame_id = kalman_frame;
     msg.header.stamp = ros::Time::now();
     msg_tent.header = msg.header;
 
     for (auto element : tracker_map)
     {
-        mrs_msgs::PoseWithCovarianceIdentified pose;
+        mrs_msgs::PoseWithCovarianceIdentified pose_identified;
         Eigen::Quaterniond quaternion;
 
         auto id = element.first;
@@ -65,28 +71,13 @@ void publishStates()
         if (tracker->get_update_count() < MIN_MEASUREMENTS_TO_VALIDATION)
             continue;
 
-        auto state = tracker->get_state();
-        auto x = state.first;
-        auto P_full = state.second;
+        geometry_msgs::PoseWithCovariance pose = tracker->get_PoseWithCovariance();
 
-        Eigen::Matrix<double, 6, 6> P = statecovReduce(x, P_full, 0).second;
+        pose_identified.id = id;
+        pose_identified.pose = pose.pose;
+        pose_identified.covariance = pose.covariance;
 
-        pose.id = id;
-        pose.pose.position.x = x[(int)STATE::X];
-        pose.pose.position.y = x[(int)STATE::Y];
-        pose.pose.position.z = x[(int)STATE::Z];
-
-        quaternion = Eigen::AngleAxisd(x[(int)STATE::ROLL], Eigen::Vector3d::UnitX()) *
-                     Eigen::AngleAxisd(x[(int)STATE::PITCH], Eigen::Vector3d::UnitY()) *
-                     Eigen::AngleAxisd(x[(int)STATE::YAW], Eigen::Vector3d::UnitZ());
-
-        pose.pose.orientation.x = quaternion.x();
-        pose.pose.orientation.y = quaternion.y();
-        pose.pose.orientation.z = quaternion.z();
-        pose.pose.orientation.w = quaternion.w();
-
-        pose.covariance = eigenCovarianceToRos(P);
-        msg.poses.push_back(pose);
+        msg.poses.push_back(pose_identified);
     }
 
     publish_pose.publish(msg);
@@ -128,9 +119,9 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
     std::optional<geometry_msgs::TransformStamped> transformation;
 
-    if (msg.header.frame_id != output_frame)
+    if (msg.header.frame_id != kalman_frame)
     {
-        transformation = transformer->getTransform(msg.header.frame_id, output_frame, msg.header.stamp);
+        transformation = transformer->getTransform(kalman_frame, distance_frame, ros::Time(0));
 
         if (not transformation)
         {
@@ -147,7 +138,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
         auto pose_stamped = poseIdentifiedToPoseStamped(measurement);
         pose_stamped.header = msg.header;
 
-        if (msg.header.frame_id != output_frame)
+        if (msg.header.frame_id != kalman_frame)
         {
             // transform coordinates from camera to target frame
             std::optional<geometry_msgs::PoseWithCovarianceStamped> pose_transformed;
@@ -159,7 +150,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
         }
 
         // Get data to kalman-friendly format
-        auto pose_vector = poseToVector(pose_stamped);
+        auto pose_vector = poseToVector(pose_stamped.pose);
         auto covariance = rosCovarianceToEigen(pose_stamped.pose.covariance);
 
         if (covariance.array().isNaN().any() or pose_vector.array().isNaN().any())
@@ -176,7 +167,8 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
                                                                     kalman_pose_model,
                                                                     kalman_rotation_model,
                                                                     spectral_density_pose,
-                                                                    spectral_density_rotation);
+                                                                    spectral_density_rotation,
+                                                                    transformer);
             continue;
         }
 
@@ -196,6 +188,19 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
 
     ros::Time stamp = msg.header.stamp;
 
+    std::optional<geometry_msgs::TransformStamped> transformation;
+
+    if (distance_frame != kalman_frame)
+    {
+        transformation = transformer->getTransform(kalman_frame, distance_frame, ros::Time(0));
+
+        if (not transformation)
+        {
+            ROS_WARN("[OBJECT TRACKER] Not found any transformation");
+            return;
+        }
+    }
+
     for (auto const &measurement : msg.ranges)
     {
         if (not tracker_map.count(measurement.id))
@@ -211,8 +216,12 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
         kalman::range_ukf_t::z_t z(measurement.range.range);
         kalman::range_ukf_t::R_t R(measurement.variance);
 
+        tracker->transform(transformation.value());
+
         tracker->predict(stamp);
         tracker->correctRange(stamp, z, R);
+
+        tracker->transform(transformer->inverse(transformation.value()));
     }
 
     return;
@@ -228,11 +237,12 @@ int main(int argc, char **argv)
 
     ROS_INFO("[OBJECT TRACKER]: Node set");
 
-    transformer = std::make_unique<mrs_lib::Transformer>("OBJECT TRACKER", ros::Duration(0.5));
+    transformer = std::make_shared<mrs_lib::Transformer>("OBJECT TRACKER", ros::Duration(0.1));
     mrs_lib::ParamLoader param_loader(nh, "Object tracker");
 
     param_loader.loadParam("uav_name", uav_name);
-    param_loader.loadParam("output_frame", output_frame, std::string("local_origin"));
+    param_loader.loadParam("kalman_frame", kalman_frame, std::string("local_origin"));
+    param_loader.loadParam("distance_frame", distance_frame, std::string("fcu_untilted"));
     param_loader.loadParam("output_framerate", output_framerate, double(DEFAULT_OUTPUT_FRAMERATE));
 
     param_loader.loadParam("kalman_pose_model", kalman_pose_model);

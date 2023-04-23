@@ -12,8 +12,19 @@
 #ifndef _HELPERFUN_H_
 #define _HELPERFUN_H_
 
+
+#if __INTELLISENSE__
+#undef __ARM_NEON
+#undef __ARM_NEON__
+#endif
+
 #include <mrs_msgs/PoseWithCovarianceArrayStamped.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h> 
+#include <geometry_msgs/PoseWithCovariance.h> 
+#include <geometry_msgs/TwistWithCovarianceStamped.h> 
+#include <geometry_msgs/TwistWithCovariance.h>
+
+#include <mrs_lib/transformer.h>
 
 #include <Eigen/Dense>
 #include <ros/ros.h>
@@ -66,7 +77,15 @@ double fixAngle(double origAngle, double newAngle);
  * @param pose 
  * @return Eigen::VectorXd 
  */
-Eigen::VectorXd poseToVector(const geometry_msgs::PoseWithCovarianceStamped &pose);
+Eigen::VectorXd poseToVector(const geometry_msgs::PoseWithCovariance &pose);
+
+/**
+ * @brief statecov to Pose
+ * 
+ * @param vector 
+ * @return geometry_msgs::PoseWithCovariance 
+ */
+geometry_msgs::PoseWithCovariance statecovToPose(const Eigen::VectorXd &vector);
 
 /**
  * @brief Reformat ROS format of covariance matrix to matrix format
@@ -85,13 +104,20 @@ Eigen::MatrixXd rosCovarianceToEigen(const boost::array<double, 36> input);
 boost::array<double, 36> eigenCovarianceToRos(const Eigen::MatrixXd input);
 
 /**
- * @brief return state vector and covariance reduced to order of derivative
+ * @brief Get pose covariance matrix from the big matrix
  * 
- * @param x state vector
- * @param P Covariance matrix
- * @return std::pair<Eigen::VectorXd, Eigen::MatrixXd> 
+ * @param P 
+ * @return Eigen::MatrixXd 
  */
-std::pair<Eigen::VectorXd, Eigen::MatrixXd> statecovReduce(const Eigen::VectorXd x, const Eigen::MatrixXd P, int order);
+Eigen::MatrixXd covGetPose(const Eigen::MatrixXd P);
+
+/**
+ * @brief Get velocity covariance matrix from the big matrix
+ * 
+ * @param P 
+ * @return Eigen::MatrixXd 
+ */
+Eigen::MatrixXd covGetVelocity(const Eigen::MatrixXd P);
 
 /**
  * @brief further sanitation of the measurment. I don't understand that very much, but it is in fitler.cpp
