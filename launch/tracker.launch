@@ -28,7 +28,7 @@
   <arg name="spectral_density_rotation" default="1" />
 
   <group ns="$(arg uav_name)">
-    <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
+    <node name="object_tracker2" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
         <param name="kalman_frame"      value="$(arg kalman_frame)"/>
         <param name="output_framerate"  value="$(arg output_framerate)" />
@@ -44,25 +44,25 @@
         <remap from="~filtered_poses" to="~filtered_poses"/>
     </node>
 
-    <node name="transformer_input" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
+    <node name="transformer_input2" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
         <param name="output_frame"      value="$(arg kalman_frame)"/>
 
         <remap from="~poses" to="~poses"/>
-        <remap from="~transformed_poses" to="object_tracker/poses"/>
+        <remap from="~transformed_poses" to="object_tracker2/poses"/>
     </node>
 
-    <node name="transformer_output" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
+    <node name="transformer_output2" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
         <param name="output_frame"      value="$(arg output_frame)"/>
 
-        <remap from="~poses" to="object_tracker/filtered_poses"/>
-        <remap from="~transformed_poses" to="object_tracker/filtered_poses_transformed"/>
+        <remap from="~poses" to="object_tracker2/filtered_poses"/>
+        <remap from="~transformed_poses" to="object_tracker2/filtered_poses_transformed"/>
     </node>
 
-    <node name="transformer_fcu" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
+    <node name="transformer_fcu2" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
-        <param name="output_frame"      value="fcu_untilted"/>
+        <param name="output_frame"      value="/$(arg uav_name)/fcu_untilted"/>
 
         <remap from="~poses" to="object_tracker/filtered_poses"/>
         <remap from="~transformed_poses" to="object_tracker/filtered_poses_fcu_untilted"/>
