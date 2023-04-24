@@ -15,7 +15,6 @@
 
   <arg name="output_frame"      default="local_origin"/>
   <arg name="kalman_frame"      default="local_origin"/>
-  <arg name="distance_frame"      default="fcu_untilted"/>
   <arg name="use_velocity"      default="false"/>
   <arg name="output_framerate"  default="10"/>
 
@@ -32,7 +31,6 @@
     <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
         <param name="kalman_frame"      value="$(arg kalman_frame)"/>
-        <param name="distance_frame"      value="$(arg distance_frame)"/>
         <param name="output_framerate"  value="$(arg output_framerate)" />
 
         <param name="kalman_pose_model" value="$(arg kalman_pose_model)" />

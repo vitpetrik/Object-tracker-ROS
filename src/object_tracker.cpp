@@ -121,7 +121,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
     if (msg.header.frame_id != kalman_frame)
     {
-        transformation = transformer->getTransform(kalman_frame, distance_frame, ros::Time(0));
+        transformation = transformer->getTransform(msg.header.frame_id, kalman_frame, ros::Time(0));
 
         if (not transformation)
         {
@@ -190,9 +190,9 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
 
     std::optional<geometry_msgs::TransformStamped> transformation;
 
-    if (distance_frame != kalman_frame)
+    if (msg.header.frame_id != kalman_frame)
     {
-        transformation = transformer->getTransform(kalman_frame, distance_frame, ros::Time(0));
+        transformation = transformer->getTransform(kalman_frame, msg.header.frame_id, ros::Time(0));
 
         if (not transformation)
         {
@@ -242,7 +242,6 @@ int main(int argc, char **argv)
 
     param_loader.loadParam("uav_name", uav_name);
     param_loader.loadParam("kalman_frame", kalman_frame, std::string("local_origin"));
-    param_loader.loadParam("distance_frame", distance_frame, std::string("fcu_untilted"));
     param_loader.loadParam("output_framerate", output_framerate, double(DEFAULT_OUTPUT_FRAMERATE));
 
     param_loader.loadParam("kalman_pose_model", kalman_pose_model);
