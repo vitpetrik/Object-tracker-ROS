@@ -249,7 +249,7 @@ int main(int argc, char **argv)
     param_loader.loadParam("spectral_density_pose", spectral_density_pose);
     param_loader.loadParam("spectral_density_rotation", spectral_density_rotation);
 
-    transformer->setDefaultPrefix(uav_name);
+    transformer->setDefaultPrefix("");
 
     ros::Subscriber pose_sub = nh.subscribe("poses", 100, pose_callback);
     ros::Subscriber range_sub = nh.subscribe("range", 100, range_callback);

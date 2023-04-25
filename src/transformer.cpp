@@ -94,7 +94,7 @@ int main(int argc, char **argv)
     param_loader.loadParam("uav_name", uav_name);
     param_loader.loadParam("output_frame", output_frame, std::string("local_origin"));
 
-    transformer->setDefaultPrefix(uav_name);
+    transformer->setDefaultPrefix("");
 
     ros::Subscriber pose_sub = nh.subscribe("poses", 100, pose_callback);
 

@@ -62,7 +62,7 @@
 
     <node name="transformer_fcu" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
-        <param name="output_frame"      value="/$(arg uav_name)/fcu_untilted"/>
+        <param name="output_frame"      value="$(arg uav_name)/fcu_untilted"/>
 
         <remap from="~poses" to="object_tracker/filtered_poses"/>
         <remap from="~transformed_poses" to="object_tracker/filtered_poses_fcu_untilted"/>
