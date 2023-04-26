@@ -75,7 +75,7 @@
     <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR transformer_input/poses"/>
     <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB transformer_input/poses"/>
 
-    <node name="relay_4" pkg="topic_tools" type="relay" args="uwb_range/distance object_tracker/range"/>
+    <node name="relay_4" pkg="topic_tools" type="relay" args="uwb_range/range object_tracker/range"/>
   </group>
 
 </launch>
