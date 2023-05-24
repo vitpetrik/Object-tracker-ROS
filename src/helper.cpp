@@ -106,12 +106,12 @@ double quatToPitch(Eigen::Quaterniond q)
  * @param pose
  * @return Eigen::VectorXd
  */
-Eigen::VectorXd poseToVector(const geometry_msgs::PoseWithCovarianceStamped &pose)
+Eigen::VectorXd poseToVector(const geometry_msgs::PoseWithCovariance &pose)
 {
     Eigen::VectorXd pose_vector(6);
 
-    auto &position = pose.pose.pose.position;
-    auto &orientation = pose.pose.pose.orientation;
+    auto &position = pose.pose.position;
+    auto &orientation = pose.pose.orientation;
 
     pose_vector(0) = position.x;
     pose_vector(1) = position.y;
@@ -128,6 +128,33 @@ Eigen::VectorXd poseToVector(const geometry_msgs::PoseWithCovarianceStamped &pos
     pose_vector(5) = fixAngle(quatToYaw(quaternion), 0);
 
     return pose_vector;
+}
+
+/**
+ * @brief statecov to Pose
+ * 
+ * @param vector 
+ * @return geometry_msgs::PoseWithCovariance 
+ */
+geometry_msgs::PoseWithCovariance statecovToPose(const Eigen::VectorXd &vector)
+{
+    geometry_msgs::PoseWithCovariance pose;
+
+    pose.pose.position.x = vector(0);
+    pose.pose.position.y = vector(1);
+    pose.pose.position.z = vector(2);
+
+    Eigen::Quaterniond quaternion;
+    quaternion = Eigen::AngleAxisd(vector(5), Eigen::Vector3d::UnitZ()) *
+                 Eigen::AngleAxisd(vector(4), Eigen::Vector3d::UnitY()) *
+                 Eigen::AngleAxisd(vector(3), Eigen::Vector3d::UnitX());
+
+    pose.pose.orientation.w = quaternion.w();
+    pose.pose.orientation.x = quaternion.x();
+    pose.pose.orientation.y = quaternion.y();
+    pose.pose.orientation.z = quaternion.z();
+
+    return pose;
 }
 
 /**
@@ -274,6 +301,61 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> statecovReduce(const Eigen::VectorXd
 
     P_new.triangularView<Eigen::Lower>() = P_new.transpose();
     return std::make_pair(x_new, P_new);
+}
+
+/**
+ * @brief Get pose covariance matrix from the big matrix
+ * 
+ * @param P 
+ * @return Eigen::MatrixXd 
+ */
+Eigen::MatrixXd covGetPose(const Eigen::MatrixXd P)
+{
+    Eigen::MatrixXd P_new = Eigen::MatrixXd::Zero(6, 6);
+
+    P_new(0, 0) = P((int)STATE::X, (int)STATE::X);
+    P_new(0, 1) = P((int)STATE::X, (int)STATE::Y);
+    P_new(0, 2) = P((int)STATE::X, (int)STATE::Z);
+    P_new(1, 1) = P((int)STATE::Y, (int)STATE::Y);
+    P_new(1, 2) = P((int)STATE::Y, (int)STATE::Z);
+    P_new(2, 2) = P((int)STATE::Z, (int)STATE::Z);
+    P_new(3, 3) = P((int)STATE::ROLL, (int)STATE::ROLL);
+    P_new(3, 4) = P((int)STATE::ROLL, (int)STATE::PITCH);
+    P_new(3, 5) = P((int)STATE::ROLL, (int)STATE::YAW);
+    P_new(4, 4) = P((int)STATE::PITCH, (int)STATE::PITCH);
+    P_new(4, 5) = P((int)STATE::PITCH, (int)STATE::YAW);
+    P_new(5, 5) = P((int)STATE::YAW, (int)STATE::YAW);
+
+    P_new.triangularView<Eigen::Lower>() = P_new.transpose();
+    return P_new;
+}
+
+/**
+ * @brief Get velocity covariance matrix from the big matrix
+ * 
+ * @param P 
+ * @return Eigen::MatrixXd 
+ */
+Eigen::MatrixXd covGetVelocity(const Eigen::MatrixXd P)
+{
+    Eigen::MatrixXd P_new = Eigen::MatrixXd::Zero(6, 6);
+
+    P_new(0, 0) = P((int)STATE::X_dt, (int)STATE::X_dt);
+    P_new(0, 1) = P((int)STATE::X_dt, (int)STATE::Y_dt);
+    P_new(0, 2) = P((int)STATE::X_dt, (int)STATE::Z_dt);
+    P_new(1, 1) = P((int)STATE::Y_dt, (int)STATE::Y_dt);
+    P_new(1, 2) = P((int)STATE::Y_dt, (int)STATE::Z_dt);
+    P_new(2, 2) = P((int)STATE::Z_dt, (int)STATE::Z_dt);
+    P_new(3, 3) = P((int)STATE::ROLL_dt, (int)STATE::ROLL_dt);
+    P_new(3, 4) = P((int)STATE::ROLL_dt, (int)STATE::PITCH_dt);
+    P_new(3, 5) = P((int)STATE::ROLL_dt, (int)STATE::YAW_dt);
+    P_new(4, 4) = P((int)STATE::PITCH_dt, (int)STATE::PITCH_dt);
+    P_new(4, 5) = P((int)STATE::PITCH_dt, (int)STATE::YAW_dt);
+    P_new(5, 5) = P((int)STATE::YAW_dt, (int)STATE::YAW_dt);
+
+    P_new.triangularView<Eigen::Lower>() = P_new.transpose();
+
+    return P_new;
 }
 
 /**

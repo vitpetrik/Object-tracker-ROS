@@ -14,7 +14,7 @@
   <arg name="profiler" default="$(optenv PROFILER false)" />
 
   <arg name="output_frame"      default="local_origin"/>
-  <arg name="kalman_frame"      default="fcu"/>
+  <arg name="kalman_frame"      default="local_origin"/>
   <arg name="use_velocity"      default="false"/>
   <arg name="output_framerate"  default="10"/>
 
@@ -30,7 +30,7 @@
   <group ns="$(arg uav_name)">
     <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
-        <param name="output_frame"      value="$(arg kalman_frame)"/>
+        <param name="kalman_frame"      value="$(arg kalman_frame)"/>
         <param name="output_framerate"  value="$(arg output_framerate)" />
 
         <param name="kalman_pose_model" value="$(arg kalman_pose_model)" />
@@ -60,6 +60,14 @@
         <remap from="~transformed_poses" to="object_tracker/filtered_poses_transformed"/>
     </node>
 
+    <node name="transformer_fcu" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
+        <param name="uav_name"          value="$(arg uav_name)" />
+        <param name="output_frame"      value="$(arg uav_name)/fcu_untilted"/>
+
+        <remap from="~poses" to="object_tracker/filtered_poses"/>
+        <remap from="~transformed_poses" to="object_tracker/filtered_poses_fcu_untilted"/>
+    </node>
+
     <!-- <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL object_tracker/poses"/>
     <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR object_tracker/poses"/>
     <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB object_tracker/poses"/> -->
@@ -67,8 +75,7 @@
     <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR transformer_input/poses"/>
     <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB transformer_input/poses"/>
 
-
-    <node name="relay_4" pkg="topic_tools" type="relay" args="uwb_range/distance object_tracker/range"/>
+    <node name="relay_4" pkg="topic_tools" type="relay" args="uwb_range/range object_tracker/range"/>
   </group>
 
 </launch>
