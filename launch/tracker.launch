@@ -60,12 +60,20 @@
         <remap from="~transformed_poses" to="object_tracker/filtered_poses_transformed"/>
     </node>
 
-    <node name="transformer_fcu" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
+    <node name="transformer_fcu_untilted" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
         <param name="output_frame"      value="$(arg uav_name)/fcu_untilted"/>
 
         <remap from="~poses" to="object_tracker/filtered_poses"/>
         <remap from="~transformed_poses" to="object_tracker/filtered_poses_fcu_untilted"/>
+    </node>
+
+    <node name="transformer_fcu" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
+        <param name="uav_name"          value="$(arg uav_name)" />
+        <param name="output_frame"      value="$(arg uav_name)/fcu"/>
+
+        <remap from="~poses" to="object_tracker/filtered_poses"/>
+        <remap from="~transformed_poses" to="object_tracker/filtered_poses_fcu"/>
     </node>
 
     <!-- <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL object_tracker/poses"/>
