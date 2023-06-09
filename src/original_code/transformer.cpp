@@ -48,8 +48,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
     if (not transformation)
     {
-        ROS_WARN_STREAM("[TRANSFORMER] Not found any transformation from: " << msg.header.frame_id << " to " << output_frame);
-
+        ROS_WARN("[TRANSFORMER] Not found any transformation");
         return;
     }
 

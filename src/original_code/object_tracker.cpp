@@ -80,14 +80,6 @@ void publishStates()
         msg.poses.push_back(pose_identified);
     }
 
-     if(msg.poses.empty()){
-        ROS_ERROR("[OBJECT TRACKER - publishStates] Pose message is empty");
-    }
-    else{
-        ROS_INFO_STREAM("[OBJECT TRACKER - publishStates] Ready to publish the states." << msg.poses.cend()->pose.position.x <<" "
-                                                                                        << msg.poses.cend()->pose.position.y << " " 
-                                                                                        << msg.poses.cend()->pose.position.z);
-    }
     publish_pose.publish(msg);
     return;
 }
@@ -106,7 +98,7 @@ void update_trackers()
 
         if (age > decay_age)
         {
-            ROS_WARN_STREAM("Deleting node 0x" << id << " because of old age.");
+            ROS_WARN("Deleting node 0x%X", id);
             tracker_map.erase(it++);
             continue;
         }
@@ -133,7 +125,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
         if (not transformation)
         {
-            ROS_WARN_STREAM("[OBJECT TRACKER - Pose] Not found any transformation from: " << msg.header.frame_id << " to " << kalman_frame);
+            ROS_WARN("[OBJECT TRACKER] Not found any transformation");
             return;
         }
     }
@@ -204,10 +196,9 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
 
         if (not transformation)
         {
-            ROS_WARN_STREAM("[OBJECT TRACKER - Range] Not found any transformation from: " << kalman_frame << " to " << msg.header.frame_id);
+            ROS_WARN("[OBJECT TRACKER] Not found any transformation");
             return;
         }
-        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER - Range] Found the transformation.");
     }
 
     for (auto const &measurement : msg.ranges)

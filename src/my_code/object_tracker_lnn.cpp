@@ -1,6 +1,6 @@
 /**
  * @file object_tracker.cpp
- * @author Vit Petrik (petrivi2@fel.cvut.cz)
+ * @author Vit Petrik (petrivi2@fel.cvut.cz) and Lucas Nobrega 
  * @brief
  * @version 0.1
  * @date 2023-02-26
@@ -52,6 +52,8 @@ int kalman_rotation_model;
 double spectral_density_pose;
 double spectral_density_rotation;
 
+int output_id = 0;
+
 void publishStates()
 {
     mrs_msgs::PoseWithCovarianceArrayStamped msg;
@@ -67,6 +69,9 @@ void publishStates()
 
         auto id = element.first;
         auto tracker = element.second;
+        
+        ROS_INFO_STREAM("[OB TRCKR] element id " << id << " tracker len " << tracker->get_update_count());
+
 
         if (tracker->get_update_count() < MIN_MEASUREMENTS_TO_VALIDATION)
             continue;
@@ -80,7 +85,7 @@ void publishStates()
         msg.poses.push_back(pose_identified);
     }
 
-     if(msg.poses.empty()){
+    if(msg.poses.empty()){
         ROS_ERROR("[OBJECT TRACKER - publishStates] Pose message is empty");
     }
     else{
@@ -106,7 +111,7 @@ void update_trackers()
 
         if (age > decay_age)
         {
-            ROS_WARN_STREAM("Deleting node 0x" << id << " because of old age.");
+            ROS_WARN_STREAM("Deleting node 0x" << id);
             tracker_map.erase(it++);
             continue;
         }
@@ -121,31 +126,75 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 {
     if (msg.poses.empty())
         return;
-    ROS_DEBUG("[OBJECT TRACKER] Getting %ld pose measurements", msg.poses.size());
+    
+    int i = 0;
+    
+    //mrs_msgs::PoseWithCovarianceArrayStamped msg_cleaned;
 
+    
+    // The beginning is the same.
+    //msg_cleaned.header.frame_id = msg.header.frame_id;
+    //msg_cleaned.header.stamp = msg.header.stamp;
+    //msg_cleaned.header.seq = msg.header.seq;
+
+    // Poses will be calculated now, based on ID 
+    for (auto& local_msg : msg.poses){
+      i++;
+      ROS_INFO_STREAM("[OBJECT TRACKER LNN CODE] " << i << " Got stamp: " << msg.header.stamp);
+      ROS_INFO_STREAM("[OBJECT TRACKER LNN CODE] " << i << " Got pose for ID: " << local_msg.id );
+      ROS_INFO_STREAM("[OBJECT TRACKER LNN CODE] " << i << " Got local_msg.id: " << local_msg.id);
+      ROS_INFO_STREAM("[OBJECT TRACKER LNN CODE] " << i << " For frame: " << msg.header.frame_id <<
+                                                                " got pose (x, y, z): " << local_msg.pose.position.x << " | "
+                                                                                        << local_msg.pose.position.y << " | "
+                                                                                        << local_msg.pose.position.z);
+      
+      if(local_msg.id == output_id){
+        ROS_INFO_STREAM("[OBJECT TRACKER LNN CODE] Message will be inserted");
+        //msg_cleaned.poses.push_back(local_msg);
+        //ROS_INFO_STREAM("[OBJECT TRACKER LNN CODE] Inserted message: " << msg_cleaned.poses.size());
+      }
+      else{
+        ROS_WARN_STREAM("[OBJECT TRACKER LNN CODE] This msg id " << local_msg.id <<" will not be processed because is waiting for the " << output_id);
+      }
+
+      ROS_INFO_STREAM("[LNN CODE] ##############################################################################");
+    }
+
+ 
+    //ROS_DEBUG_STREAM("[OBJECT TRACKER] Getting "<< msg_cleaned.poses.size() <<" pose measurements");
+    ROS_DEBUG_STREAM("[OBJECT TRACKER] Getting "<< msg.poses.size() <<" pose measurements");
+
+    //ros::Time stamp = msg_cleaned.header.stamp;
     ros::Time stamp = msg.header.stamp;
 
     std::optional<geometry_msgs::TransformStamped> transformation;
 
+    //if (msg_cleaned.header.frame_id != kalman_frame)
     if (msg.header.frame_id != kalman_frame)
     {
+        //transformation = transformer->getTransform(msg_cleaned.header.frame_id, kalman_frame, ros::Time(0));
         transformation = transformer->getTransform(msg.header.frame_id, kalman_frame, ros::Time(0));
 
         if (not transformation)
         {
-            ROS_WARN_STREAM("[OBJECT TRACKER - Pose] Not found any transformation from: " << msg.header.frame_id << " to " << kalman_frame);
+            //ROS_WARN("[OBJECT TRACKER - pose_callback] Not found any transformation");
+            //ROS_WARN_STREAM("[OBJECT TRACKER - pose_callback] Not found any transformation from " << kalman_frame << " to "<< msg_cleaned.header.frame_id);
+            ROS_WARN_STREAM("[OBJECT TRACKER - pose_callback] Not found any transformation from " << kalman_frame << " to "<< msg.header.frame_id);
             return;
         }
     }
 
+    //for (auto const &measurement : msg_cleaned.poses)
     for (auto const &measurement : msg.poses)
     {
-        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Fusing measurment with ID 0x%X", measurement.id);
+        ROS_INFO_STREAM_THROTTLE(0.5, "[OBJECT TRACKER] Fusing measurement with ID 0x" << measurement.id);
 
         // convert original msg to stamped pose
         auto pose_stamped = poseIdentifiedToPoseStamped(measurement);
+        //pose_stamped.header = msg_cleaned.header;
         pose_stamped.header = msg.header;
 
+        //if (msg_cleaned.header.frame_id != kalman_frame)
         if (msg.header.frame_id != kalman_frame)
         {
             // transform coordinates from camera to target frame
@@ -166,10 +215,10 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
         covariance = covarianceSanity(covariance);
 
-        // create new Tracker instace if not available yet
+        // create new Tracker instance if not available yet
         if (not tracker_map.count(measurement.id))
         {
-            ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Creating new tracker for object ID: 0x%X", measurement.id);
+            ROS_INFO_STREAM_THROTTLE(0.5, "[OBJECT TRACKER] Creating new tracker for object ID: 0x" << measurement.id);
             tracker_map[measurement.id] = std::make_shared<Tracker>(pose_vector,
                                                                     covariance,
                                                                     kalman_pose_model,
@@ -204,10 +253,9 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
 
         if (not transformation)
         {
-            ROS_WARN_STREAM("[OBJECT TRACKER - Range] Not found any transformation from: " << kalman_frame << " to " << msg.header.frame_id);
+            ROS_WARN_STREAM("[OBJECT TRACKER - range_callback] Not found any transformation from " << kalman_frame << " to "<< msg.header.frame_id);
             return;
         }
-        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER - Range] Found the transformation.");
     }
 
     for (auto const &measurement : msg.ranges)
@@ -215,7 +263,7 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
         if (not tracker_map.count(measurement.id))
             continue;
 
-        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Got measurement for ID 0x%X: %.2f m", measurement.id, measurement.range.range);
+        ROS_INFO_STREAM_THROTTLE(0.5, "[OBJECT TRACKER] Got measurement for ID 0x" << measurement.id << ":" << measurement.range.range << "m");
 
         auto tracker = tracker_map[measurement.id];
 
@@ -252,6 +300,8 @@ int main(int argc, char **argv)
     param_loader.loadParam("uav_name", uav_name);
     param_loader.loadParam("kalman_frame", kalman_frame, std::string("local_origin"));
     param_loader.loadParam("output_framerate", output_framerate, double(DEFAULT_OUTPUT_FRAMERATE));
+
+    param_loader.loadParam("output_id", output_id);
 
     param_loader.loadParam("kalman_pose_model", kalman_pose_model);
     param_loader.loadParam("kalman_rotation_model", kalman_rotation_model);
