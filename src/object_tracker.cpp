@@ -132,7 +132,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
     for (auto const &measurement : msg.poses)
     {
-        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Fusing measurment with ID 0x%X", measurement.id);
+        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] POSE measurement with ID 0x%X", measurement.id);
 
         // convert original msg to stamped pose
         auto pose_stamped = poseIdentifiedToPoseStamped(measurement);
@@ -206,7 +206,7 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
         if (not tracker_map.count(measurement.id))
             continue;
 
-        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Got measurement for ID 0x%X: %.2f m", measurement.id, measurement.range.range);
+        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Distance measurement for ID 0x%X: %.2f m", measurement.id, measurement.range.range);
 
         auto tracker = tracker_map[measurement.id];
 
