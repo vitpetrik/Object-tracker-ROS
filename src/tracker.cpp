@@ -278,8 +278,8 @@ std::pair<kalman::range_ukf_t::x_t, kalman::range_ukf_t::P_t> Tracker::correctRa
         this->state_vector = x;
         this->covariance = P;
 
-        this->last_correction = time;
-        this->update_count++;
+        // this->last_correction = time;
+        // this->update_count++;
     }
 
     return std::make_pair(x, P);
