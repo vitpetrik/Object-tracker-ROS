@@ -1,0 +1,89 @@
+<!-- 
+ - @file uwb.launch
+ - @author Vit Petrik (petrivi2@fel.cvut.cz)
+ - @brief Launch nodeleted for Qorvo DW1001 with custom firmware
+ - @version 0.1
+ - @date 2022-11-17
+ - 
+ - @copyright Copyright (c) 2022
+ - 
+-->
+
+<launch>
+  <arg name="uav_name" default="$(optenv UAV_NAME uav1)"/>
+  <arg name="profiler" default="$(optenv PROFILER false)" />
+
+  <arg name="output_frame"      default="local_origin"/>
+  <arg name="kalman_frame"      default="local_origin"/>
+  <arg name="use_velocity"      default="false"/>
+  <arg name="output_framerate"  default="10"/>
+
+  <!-- use 0 for constant position
+  use 1 for constant velocity
+  use 2 for constant acceleration -->
+  <arg name="kalman_pose_model" default="0" />
+  <arg name="kalman_rotation_model" default="0" />
+
+  <arg name="spectral_density_pose" default="3" />
+  <arg name="spectral_density_rotation" default="1" />
+
+  <group ns="$(arg uav_name)">
+    <node name="object_tracker_dry" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
+        <param name="uav_name"          value="$(arg uav_name)" />
+        <param name="kalman_frame"      value="$(arg kalman_frame)"/>
+        <param name="output_framerate"  value="$(arg output_framerate)" />
+
+        <param name="kalman_pose_model" value="$(arg kalman_pose_model)" />
+        <param name="kalman_rotation_model" value="$(arg kalman_rotation_model)" />
+
+        <param name="spectral_density_pose" value="$(arg spectral_density_pose)" />
+        <param name="spectral_density_rotation" value="$(arg spectral_density_rotation)" />
+
+        <remap from="~poses" to="~poses"/>
+        <remap from="~range" to="~range"/>
+        <remap from="~filtered_poses" to="~filtered_poses"/>
+    </node>
+
+    <node name="transformer_input" pkg="object_tracker" type="transformer_node" output="log" respawn="true">
+        <param name="uav_name"          value="$(arg uav_name)" />
+        <param name="output_frame"      value="$(arg kalman_frame)"/>
+
+        <remap from="~poses" to="~poses"/>
+        <remap from="~transformed_poses" to="object_tracker_dry/poses"/>
+    </node>
+
+    <node name="transformer_output" pkg="object_tracker" type="transformer_node" output="log" respawn="true">
+        <param name="uav_name"          value="$(arg uav_name)" />
+        <param name="output_frame"      value="$(arg output_frame)"/>
+
+        <remap from="~poses" to="object_tracker_dry/filtered_poses"/>
+        <remap from="~transformed_poses" to="object_tracker_dry/filtered_poses_transformed"/>
+    </node>
+
+    <node name="transformer_fcu_untilted" pkg="object_tracker" type="transformer_node" output="log" respawn="true">
+        <param name="uav_name"          value="$(arg uav_name)" />
+        <param name="output_frame"      value="$(arg uav_name)/fcu_untilted"/>
+
+        <remap from="~poses" to="object_tracker_dry/filtered_poses"/>
+        <remap from="~transformed_poses" to="object_tracker_dry/filtered_poses_fcu_untilted"/>
+    </node>
+
+    <node name="transformer_fcu" pkg="object_tracker" type="transformer_node" output="log" respawn="true">
+        <param name="uav_name"          value="$(arg uav_name)" />
+        <param name="output_frame"      value="$(arg uav_name)/fcu"/>
+
+        <remap from="~poses" to="object_tracker_dry/filtered_poses"/>
+        <remap from="~transformed_poses" to="object_tracker_dry/filtered_poses_fcu"/>
+    </node>
+
+    <!-- <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL object_tracker/poses"/>
+    <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR object_tracker/poses"/>
+    <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB object_tracker/poses"/> -->
+    <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL transformer_input/poses"/>
+    <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR transformer_input/poses"/>
+    <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB transformer_input/poses"/>
+
+    <node name="relay_4" pkg="topic_tools" type="relay" args="uwb_range/range object_tracker_dry/range"/>
+  </group>
+
+</launch>
