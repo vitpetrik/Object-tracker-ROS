@@ -96,7 +96,7 @@ int main(int argc, char **argv)
 
     transformer->setDefaultPrefix("");
 
-    ros::Subscriber pose_sub = nh.subscribe("poses", 100, pose_callback);
+    ros::Subscriber pose_sub = nh.subscribe("poses", 10, pose_callback);
 
     publish_transformed = nh.advertise<mrs_msgs::PoseWithCovarianceArrayStamped>("transformed_poses", 10);
 

@@ -117,6 +117,12 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
     ros::Time stamp = msg.header.stamp;
 
+    if(ros::Time::now() - stamp > ros::Duration(0.5))
+    {
+        ROS_WARN("[OBJECT TRACKER] Pose message is %.3f sec old", (ros::Time::now() - stamp).toSec());
+        return;
+    }
+
     std::optional<geometry_msgs::TransformStamped> transformation;
 
     if (msg.header.frame_id != kalman_frame)
@@ -188,6 +194,12 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
 
     ros::Time stamp = msg.header.stamp;
 
+    if(ros::Time::now() - stamp > ros::Duration(0.5))
+    {
+        ROS_WARN("[OBJECT TRACKER] Distance message is %.3f sec old", (ros::Time::now() - stamp).toSec());
+        return;
+    }
+
     std::optional<geometry_msgs::TransformStamped> transformation;
 
     if (msg.header.frame_id != kalman_frame)
@@ -251,8 +263,8 @@ int main(int argc, char **argv)
 
     transformer->setDefaultPrefix("");
 
-    ros::Subscriber pose_sub = nh.subscribe("poses", 100, pose_callback);
-    ros::Subscriber range_sub = nh.subscribe("range", 100, range_callback);
+    ros::Subscriber pose_sub = nh.subscribe("poses", 10, pose_callback);
+    ros::Subscriber range_sub = nh.subscribe("range", 10, range_callback);
 
     publish_pose = nh.advertise<mrs_msgs::PoseWithCovarianceArrayStamped>("filtered_poses", 10);
 

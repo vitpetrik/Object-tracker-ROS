@@ -195,6 +195,9 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time, bool apply_
 
     double dt = std::fmax(std::fmin((time - this->last_prediction).toSec(), (time - this->last_correction).toSec()), 0.0);
 
+    if(dt == 0)
+        return std::make_pair(x, P);
+
     this->predict_lkf.A = transitionMatrix(dt, this->position_model_type, this->rotation_model_type);
     kalman::predict_lkf_t::statecov_t statecov = {x, P, time};
 
@@ -278,8 +281,8 @@ std::pair<kalman::range_ukf_t::x_t, kalman::range_ukf_t::P_t> Tracker::correctRa
         this->state_vector = x;
         this->covariance = P;
 
-        // this->last_correction = time;
-        // this->update_count++;
+        this->last_correction = time;
+        this->update_count++;
     }
 
     return std::make_pair(x, P);

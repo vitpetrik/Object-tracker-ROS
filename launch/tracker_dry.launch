@@ -44,7 +44,7 @@
         <remap from="~filtered_poses" to="~filtered_poses"/>
     </node>
 
-    <node name="transformer_input" pkg="object_tracker" type="transformer_node" output="log" respawn="true">
+    <node name="transformer_input" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
         <param name="output_frame"      value="$(arg kalman_frame)"/>
 
