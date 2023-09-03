@@ -18,6 +18,7 @@
 #include <ros/package.h>
 
 #include <unordered_map>
+#include <sstream>
 #include <stdint.h>
 
 #include <mrs_msgs/RangeWithCovarianceArrayStamped.h>
@@ -56,10 +57,13 @@ double spectral_density_rotation;
 
 void publishStates()
 {
+    ros::Time stamp = ros::Time::now();
+
     mrs_msgs::PoseWithCovarianceArrayStamped msg;
     mrs_msgs::PoseWithCovarianceArrayStamped msg_tent;
+
+    msg.header.stamp = stamp;
     msg.header.frame_id = kalman_frame;
-    msg.header.stamp = ros::Time::now();
     msg_tent.header = msg.header;
 
     for (auto element : tracker_map)
@@ -73,7 +77,9 @@ void publishStates()
         if (tracker->get_update_count() < MIN_MEASUREMENTS_TO_VALIDATION)
             continue;
 
-        geometry_msgs::PoseWithCovariance pose = tracker->get_PoseWithCovariance();
+        std::pair<kalman::x_t, kalman::P_t> result = tracker->predict(msg.header.stamp, false);
+
+        geometry_msgs::PoseWithCovariance pose = tracker->get_PoseWithCovariance(result.first, result.second);
 
         pose_identified.id = id;
         pose_identified.pose = pose.pose;
@@ -106,10 +112,16 @@ void update_trackers()
         {
             ROS_WARN("Deleting node 0x%X", id);
             tracker_map.erase(it++);
+
+            std::stringstream ss;
+            std_msgs::String msg_status;
+
+            ss << "-id delete_msg -r [OT] Deleting tracker " << "0x" << std::setfill('0') << std::setw(2) << std::right << std::hex << id;
+            auto x = ss.str();
+            msg_status.data = x.c_str();
+            uav_status.publish(msg_status);
             continue;
         }
-
-        tracker->predict(ros::Time::now());
         it++;
     }
     return;
@@ -185,12 +197,20 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
                                                                     spectral_density_pose,
                                                                     spectral_density_rotation,
                                                                     transformer);
+
+            std::stringstream ss;
+            std_msgs::String msg_status;
+
+            ss << "-id create_msg -g [OT] Creating tracker " << "0x" << std::setfill('0') << std::setw(2) << std::right << std::hex << measurement.id;
+            auto x = ss.str();
+            msg_status.data = x.c_str();
+            uav_status.publish(msg_status);
             continue;
         }
 
         auto tracker = tracker_map[measurement.id];
 
-        tracker->predict(stamp);
+        tracker->predict(stamp, true);
         tracker->correctPose(stamp, pose_vector, covariance);
     }
     return;
@@ -244,7 +264,7 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
 
         tracker->transform(transformation.value());
 
-        tracker->predict(stamp);
+        tracker->predict(stamp, true);
         tracker->correctRange(stamp, z, R);
 
         tracker->transform(transformer->inverse(transformation.value()));

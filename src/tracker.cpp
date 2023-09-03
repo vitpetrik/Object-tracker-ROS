@@ -49,18 +49,18 @@ Eigen::MatrixXd modelMatrix(double dt, int model_type)
     {
     case TRANSITION_MODEL_TYPE::CONSTANT_POSITION:
         model_block << 1, 0,
-                        0, 0;
+            0, 0;
 
         break;
     case TRANSITION_MODEL_TYPE::CONSTANT_VELOCITY:
         model_block << 1, dt,
-                        0, 1;
+            0, 1;
         break;
-    // case TRANSITION_MODEL_TYPE::CONSTANT_ACCELERATION:
-    //     model_block << 1, dt, 0.5*pow(dt, 2),
-    //             0, 1, dt,
-    //             0, 0, 1;
-    //     break;
+        // case TRANSITION_MODEL_TYPE::CONSTANT_ACCELERATION:
+        //     model_block << 1, dt, 0.5*pow(dt, 2),
+        //             0, 1, dt,
+        //             0, 0, 1;
+        //     break;
     }
 
     model.block<2, 2>(0, 0) = model_block;
@@ -178,7 +178,6 @@ Tracker::Tracker(kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::R_t R, int posit
                                               kalman::predict_lkf_t::H_t::Identity());
     this->range_ukf = kalman::range_ukf_t(transition_ukf, observe_ukf);
 
-    this->last_prediction = ros::Time::now();
     this->last_correction = ros::Time::now();
     return;
 }
@@ -193,9 +192,9 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time, bool apply_
     kalman::x_t x = this->state_vector;
     kalman::P_t P = this->covariance;
 
-    double dt = std::fmax(std::fmin((time - this->last_prediction).toSec(), (time - this->last_correction).toSec()), 0.0);
+    double dt = std::fmax((time - this->last_correction).toSec(), 0.0);
 
-    if(dt == 0)
+    if (dt == 0)
         return std::make_pair(x, P);
 
     this->predict_lkf.A = transitionMatrix(dt, this->position_model_type, this->rotation_model_type);
@@ -209,8 +208,6 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time, bool apply_
     {
         this->state_vector = x;
         this->covariance = P;
-
-        this->last_prediction = time;
     }
 
     return std::make_pair(x, P);
@@ -288,12 +285,9 @@ std::pair<kalman::range_ukf_t::x_t, kalman::range_ukf_t::P_t> Tracker::correctRa
     return std::make_pair(x, P);
 }
 
-geometry_msgs::PoseWithCovariance Tracker::get_PoseWithCovariance()
+geometry_msgs::PoseWithCovariance Tracker::get_PoseWithCovariance(kalman::x_t x, kalman::P_t P_full)
 {
     geometry_msgs::PoseWithCovariance pose;
-
-    auto x = this->state_vector;
-    auto P_full = this->covariance;
 
     Eigen::Matrix<double, 6, 6> P = covGetPose(P_full);
 

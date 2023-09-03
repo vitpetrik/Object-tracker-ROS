@@ -53,7 +53,7 @@ public:
 
     ~Tracker();
 
-    std::pair<kalman::x_t, kalman::P_t> predict(ros::Time, bool apply_update = true);
+    std::pair<kalman::x_t, kalman::P_t> predict(ros::Time, bool apply_update = false);
 
     std::pair<kalman::pose_lkf_t::x_t, kalman::pose_lkf_t::P_t> correctPose(ros::Time, kalman::pose_lkf_t::z_t, kalman::pose_lkf_t::R_t, bool apply_update = true);
 
@@ -67,7 +67,12 @@ public:
 
     const std::pair<kalman::x_t, kalman::P_t> get_state() const { return std::make_pair(state_vector, covariance); };
 
-    geometry_msgs::PoseWithCovariance get_PoseWithCovariance();
+    geometry_msgs::PoseWithCovariance get_PoseWithCovariance(kalman::x_t x, kalman::P_t P_full);
+    
+    geometry_msgs::PoseWithCovariance get_PoseWithCovariance()
+    {
+        return get_PoseWithCovariance(state_vector, covariance);
+    }
 
     geometry_msgs::TwistWithCovariance get_TwistWithCovariance();
 
@@ -86,7 +91,6 @@ private:
     kalman::range_ukf_t range_ukf;
     kalman::pose_lkf_t pose_lkf;
 
-    ros::Time last_prediction;
     ros::Time last_correction;
 
     std::shared_ptr<mrs_lib::Transformer> transformer;
