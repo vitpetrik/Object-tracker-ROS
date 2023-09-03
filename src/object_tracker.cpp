@@ -23,6 +23,7 @@
 #include <mrs_msgs/RangeWithCovarianceArrayStamped.h>
 #include <mrs_msgs/PoseWithCovarianceArrayStamped.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <std_msgs/String.h>
 
 #include <mrs_lib/transformer.h>
 #include <mrs_lib/param_loader.h>
@@ -44,6 +45,7 @@ std::unordered_map<uint64_t, std::shared_ptr<Tracker>> tracker_map;
 std::shared_ptr<mrs_lib::Transformer> transformer;
 
 ros::Publisher publish_pose;
+ros::Publisher uav_status;
 std::string kalman_frame;
 std::string distance_frame;
 
@@ -79,6 +81,10 @@ void publishStates()
 
         msg.poses.push_back(pose_identified);
     }
+
+    std_msgs::String msg_status;
+    msg_status.data = std::string("-id detect_msg -g [OT] detects "+std::to_string(msg.poses.size())+" targets").c_str();
+    uav_status.publish(msg_status);
 
     publish_pose.publish(msg);
     return;
@@ -117,9 +123,13 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
     ros::Time stamp = msg.header.stamp;
 
-    if(ros::Time::now() - stamp > ros::Duration(0.5))
+    ros::Duration age = ros::Time::now() - stamp;
+    if(age.toSec() > 0.5)
     {
-        ROS_WARN("[OBJECT TRACKER] Pose message is %.3f sec old", (ros::Time::now() - stamp).toSec());
+        ROS_WARN("[OBJECT TRACKER] Pose message is %.3f sec old", age.toSec());
+        std_msgs::String msg_status;
+        msg_status.data = std::string("-id error_msg -R [OT] got old POSE").c_str();
+        uav_status.publish(msg_status);
         return;
     }
 
@@ -194,9 +204,13 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
 
     ros::Time stamp = msg.header.stamp;
 
-    if(ros::Time::now() - stamp > ros::Duration(0.5))
+    ros::Duration age = ros::Time::now() - stamp;
+    if(age.toSec() > 0.5)
     {
-        ROS_WARN("[OBJECT TRACKER] Distance message is %.3f sec old", (ros::Time::now() - stamp).toSec());
+        ROS_WARN("[OBJECT TRACKER] Range message is %.3f sec old", age.toSec());
+        std_msgs::String msg_status;
+        msg_status.data = std::string("-id error_msg -R [OT] got old RANGE").c_str();
+        uav_status.publish(msg_status);
         return;
     }
 
@@ -267,6 +281,7 @@ int main(int argc, char **argv)
     ros::Subscriber range_sub = nh.subscribe("range", 10, range_callback);
 
     publish_pose = nh.advertise<mrs_msgs::PoseWithCovarianceArrayStamped>("filtered_poses", 10);
+    uav_status = nh.advertise<std_msgs::String>("uav_status", 1);
 
     ros::Rate publish_rate(output_framerate);
 

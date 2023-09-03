@@ -42,6 +42,7 @@
         <remap from="~poses" to="~poses"/>
         <remap from="~range" to="~range"/>
         <remap from="~filtered_poses" to="~filtered_poses"/>
+        <remap from="~uav_status" to="mrs_uav_status/display_string" />
     </node>
 
     <node name="transformer_input" pkg="object_tracker" type="transformer_node" output="log" respawn="true">
