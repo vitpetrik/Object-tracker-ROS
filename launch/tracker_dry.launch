@@ -18,6 +18,8 @@
   <arg name="use_velocity"      default="false"/>
   <arg name="output_framerate"  default="10"/>
 
+  <arg name="time_to_live"      default="5" />
+
   <!-- use 0 for constant position
   use 1 for constant velocity
   use 2 for constant acceleration -->
@@ -39,15 +41,18 @@
         <param name="spectral_density_pose" value="$(arg spectral_density_pose)" />
         <param name="spectral_density_rotation" value="$(arg spectral_density_rotation)" />
 
+        <param name="time_to_live" value="$(arg time_to_live)" />
+
         <remap from="~poses" to="~poses"/>
         <remap from="~range" to="~range"/>
         <remap from="~filtered_poses" to="~filtered_poses"/>
         <remap from="~uav_status" to="mrs_uav_status/display_string" />
     </node>
 
-    <node name="transformer_input" pkg="object_tracker" type="transformer_node" output="screen" respawn="true">
+    <node name="transformer_input_dry" pkg="object_tracker" type="transformer_node" output="log" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
         <param name="output_frame"      value="$(arg kalman_frame)"/>
+        <param name="cache_time"      value="$(arg time_to_live)"/>
 
         <remap from="~poses" to="~poses"/>
         <remap from="~transformed_poses" to="object_tracker_dry/poses"/>
@@ -75,14 +80,11 @@
 
         <remap from="~poses" to="object_tracker_dry/filtered_poses"/>
         <remap from="~transformed_poses" to="object_tracker_dry/filtered_poses_fcu"/>
-    </node>
+    </node> -->
 
-    <!-- <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL object_tracker/poses"/>
-    <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR object_tracker/poses"/>
-    <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB object_tracker/poses"/> -->
-    <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL transformer_input/poses"/>
-    <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR transformer_input/poses"/>
-    <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB transformer_input/poses"/>
+    <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL transformer_input_dry/poses"/>
+    <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR transformer_input_dry/poses"/>
+    <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB transformer_input_dry/poses"/>
 
     <node name="relay_4" pkg="topic_tools" type="relay" args="uwb_range/range object_tracker_dry/range"/>
   </group>

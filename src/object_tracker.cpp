@@ -33,8 +33,6 @@
 #include "helperfun.h"
 
 #define DEFAULT_OUTPUT_FRAMERATE 20.0
-#define DECAY_AGE_NORMAL 3.0
-#define DECAY_AGE_UNVALIDATED 1.0
 #define MIN_MEASUREMENTS_TO_VALIDATION 10
 #define POS_THRESH 2.0
 #define MAH_THRESH 2.0
@@ -54,6 +52,7 @@ int kalman_pose_model;
 int kalman_rotation_model;
 double spectral_density_pose;
 double spectral_density_rotation;
+double time_to_live;
 
 void publishStates()
 {
@@ -89,7 +88,7 @@ void publishStates()
     }
 
     std_msgs::String msg_status;
-    msg_status.data = std::string("-id detect_msg -g [OT] detects "+std::to_string(msg.poses.size())+" targets").c_str();
+    msg_status.data = std::string("-id detect_msg -g [OT] detects " + std::to_string(msg.poses.size()) + " targets").c_str();
     uav_status.publish(msg_status);
 
     publish_pose.publish(msg);
@@ -98,17 +97,19 @@ void publishStates()
 
 void update_trackers()
 {
+    if (ros::Time::now().toSec() <= time_to_live)
+        return;
+
+    ros::Time deadline = ros::Time::now() - ros::Duration(time_to_live);
+
     for (auto it = tracker_map.cbegin(); it != tracker_map.cend();)
     {
         auto id = it->first;
         auto tracker = it->second;
-        double age = (ros::Time::now() - tracker->get_last_correction()).toSec();
 
-        double decay_age = DECAY_AGE_UNVALIDATED;
-        if (tracker->get_update_count() > MIN_MEASUREMENTS_TO_VALIDATION)
-            decay_age = DECAY_AGE_NORMAL;
+        int count = tracker->delete_old(deadline);
 
-        if (age > decay_age)
+        if (tracker->get_update_count() == 0)
         {
             ROS_WARN("Deleting node 0x%X", id);
             tracker_map.erase(it++);
@@ -116,12 +117,14 @@ void update_trackers()
             std::stringstream ss;
             std_msgs::String msg_status;
 
-            ss << "-id delete_msg -r [OT] Deleting tracker " << "0x" << std::setfill('0') << std::setw(2) << std::right << std::hex << id;
+            ss << "-id delete_msg -r [OT] Deleting tracker "
+               << "0x" << std::setfill('0') << std::setw(2) << std::right << std::hex << id;
             auto x = ss.str();
             msg_status.data = x.c_str();
             uav_status.publish(msg_status);
             continue;
         }
+
         it++;
     }
     return;
@@ -134,13 +137,13 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
     ROS_DEBUG("[OBJECT TRACKER] Getting %ld pose measurements", msg.poses.size());
 
     ros::Time stamp = msg.header.stamp;
-
     ros::Duration age = ros::Time::now() - stamp;
-    if(age.toSec() > 0.5)
+
+    if (age.toSec() > time_to_live)
     {
-        ROS_WARN("[OBJECT TRACKER] Pose message is %.3f sec old", age.toSec());
+        ROS_WARN("[OBJECT TRACKER] Range message is %.3f sec old", age.toSec());
         std_msgs::String msg_status;
-        msg_status.data = std::string("-id error_msg -R [OT] got old POSE").c_str();
+        msg_status.data = std::string("-id error_msg -R [OT] got old RANGE").c_str();
         uav_status.publish(msg_status);
         return;
     }
@@ -160,7 +163,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
     for (auto const &measurement : msg.poses)
     {
-        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] POSE measurement with ID 0x%X", measurement.id);
+        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] POSE measurement with ID 0x%lX", measurement.id);
 
         // convert original msg to stamped pose
         auto pose_stamped = poseIdentifiedToPoseStamped(measurement);
@@ -189,8 +192,9 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
         // create new Tracker instace if not available yet
         if (not tracker_map.count(measurement.id))
         {
-            ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Creating new tracker for object ID: 0x%X", measurement.id);
-            tracker_map[measurement.id] = std::make_shared<Tracker>(pose_vector,
+            ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Creating new tracker for object ID: 0x%lX", measurement.id);
+            tracker_map[measurement.id] = std::make_shared<Tracker>(stamp,
+                                                                    pose_vector,
                                                                     covariance,
                                                                     kalman_pose_model,
                                                                     kalman_rotation_model,
@@ -201,7 +205,8 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
             std::stringstream ss;
             std_msgs::String msg_status;
 
-            ss << "-id create_msg -g [OT] Creating tracker " << "0x" << std::setfill('0') << std::setw(2) << std::right << std::hex << measurement.id;
+            ss << "-id create_msg -g [OT] Creating tracker "
+               << "0x" << std::setfill('0') << std::setw(2) << std::right << std::hex << measurement.id;
             auto x = ss.str();
             msg_status.data = x.c_str();
             uav_status.publish(msg_status);
@@ -209,8 +214,6 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
         }
 
         auto tracker = tracker_map[measurement.id];
-
-        tracker->predict(stamp, true);
         tracker->correctPose(stamp, pose_vector, covariance);
     }
     return;
@@ -225,7 +228,8 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
     ros::Time stamp = msg.header.stamp;
 
     ros::Duration age = ros::Time::now() - stamp;
-    if(age.toSec() > 0.5)
+
+    if (age.toSec() > time_to_live)
     {
         ROS_WARN("[OBJECT TRACKER] Range message is %.3f sec old", age.toSec());
         std_msgs::String msg_status;
@@ -238,12 +242,31 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
 
     if (msg.header.frame_id != kalman_frame)
     {
-        transformation = transformer->getTransform(kalman_frame, msg.header.frame_id, ros::Time(0));
+        try
+        {
+            transformation = transformer->getTransform(kalman_frame, msg.header.frame_id, stamp);
+        }
+        catch (std::exception &e)
+        {
+            ROS_WARN_STREAM("[OBJECT TRACKER] Exception: " << e.what());
+        }
 
         if (not transformation)
         {
-            ROS_WARN("[OBJECT TRACKER] Not found any transformation");
-            return;
+            if (ros::Time::now() - stamp < ros::Duration(0.1))
+            {
+                ROS_INFO("[OBJECT TRACKER] Probably tranform is not yet available");
+                transformation = transformer->getTransform(kalman_frame, msg.header.frame_id, ros::Time(0));
+            }
+            if (not transformation)
+            {
+                ROS_WARN("[OBJECT TRACKER] Not found any transformation, exiting");
+                return;
+            }
+            else
+            {
+                ROS_INFO("[OBJECT TRACKER] Found transformation for ros::Time(0)");
+            }
         }
     }
 
@@ -252,22 +275,20 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
         if (not tracker_map.count(measurement.id))
             continue;
 
-        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Distance measurement for ID 0x%X: %.2f m", measurement.id, measurement.range.range);
+        ROS_INFO_THROTTLE(0.5, "[OBJECT TRACKER] Distance measurement for ID 0x%lX: %.2f m", measurement.id, measurement.range.range);
 
         auto tracker = tracker_map[measurement.id];
 
-        if (tracker->get_update_count() < MIN_MEASUREMENTS_TO_VALIDATION)
+        if (tracker->get_pose_count() < MIN_MEASUREMENTS_TO_VALIDATION)
+        {
+            ROS_WARN("[OBJECT TRACKER] Not enough pose measurements for tracker 0x%lX", measurement.id);
             continue;
+        }
 
         kalman::range_ukf_t::z_t z(measurement.range.range);
         kalman::range_ukf_t::R_t R(measurement.variance);
 
-        tracker->transform(transformation.value());
-
-        tracker->predict(stamp, true);
-        tracker->correctRange(stamp, z, R);
-
-        tracker->transform(transformer->inverse(transformation.value()));
+        tracker->correctRange(stamp, z, R, transformation.value());
     }
 
     return;
@@ -294,6 +315,7 @@ int main(int argc, char **argv)
     param_loader.loadParam("kalman_rotation_model", kalman_rotation_model);
     param_loader.loadParam("spectral_density_pose", spectral_density_pose);
     param_loader.loadParam("spectral_density_rotation", spectral_density_rotation);
+    param_loader.loadParam("time_to_live", time_to_live);
 
     transformer->setDefaultPrefix("");
 
