@@ -165,7 +165,7 @@ Tracker::Tracker(ros::Time time, kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::
     P.triangularView<Eigen::Lower>() = P.transpose();
 
     history_t history = {std::variant<pose_measurement_t, range_measurement_t>{pose_measurement_t{z, R}}, x, P};
-    this->history_map[time] = history;
+    this->history_map.insert(std::pair<ros::Time, history_t>(time, history));
 
     kalman::pose_lkf_t::H_t H_matrix = kalman::pose_lkf_t::H_t::Zero();
 
@@ -224,17 +224,26 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     history_t &history = posteriori->second;
     ros::Duration dt = posteriori->first - apriori->first;
 
-    if (dt.toSec() <= 0)
-        ROS_WARN("Time difference between measurements is not positive!");
+    if (0 < dt.toSec())
+    {
+        kalman::predict_lkf_t::statecov_t statecov = {x, P, apriori->first};
+        this->predict_lkf.A = transitionMatrix(dt.toSec(), this->position_model_type, this->rotation_model_type);
+        statecov = this->predict_lkf.predict(statecov,
+                                            kalman::predict_lkf_t::u_t::Zero(),
+                                            processNoiseMatrix(dt.toSec(), this->position_model_type, this->rotation_model_type, this->spectral_density_pose, this->spectral_density_rotation),
+                                            dt.toSec());
+        x = statecov.x;
+        P = statecov.P;
+    }
+    else if (dt.toSec() < 0)
+    {
+        ROS_WARN("Time difference between measurements is Negative!");
+    }
+    else 
+    {
+        ROS_WARN("Time difference between measurements is Zero!");
+    }
 
-    kalman::predict_lkf_t::statecov_t statecov = {x, P, apriori->first};
-    this->predict_lkf.A = transitionMatrix(dt.toSec(), this->position_model_type, this->rotation_model_type);
-    statecov = this->predict_lkf.predict(statecov,
-                                         kalman::predict_lkf_t::u_t::Zero(),
-                                         processNoiseMatrix(dt.toSec(), this->position_model_type, this->rotation_model_type, this->spectral_density_pose, this->spectral_density_rotation),
-                                         dt.toSec());
-    x = statecov.x;
-    P = statecov.P;
 
     if (history.measurement.index() == 0)
     {
@@ -305,18 +314,18 @@ std::pair<kalman::pose_lkf_t::x_t, kalman::pose_lkf_t::P_t> Tracker::correctPose
 
     auto apriori = this->history_map.lower_bound(time);
 
-    if(apriori->first == time)
-    {
-        ROS_WARN("Measurement with this timestamp %f already exists", time.toSec());
-        return this->get_state();
-    }
+    // if(apriori->first == time)
+    // {
+    //     ROS_WARN("Measurement with this timestamp %f already exists", time.toSec());
+    //     return this->get_state();
+    // }
 
     apriori = std::prev(apriori);
     
     if (apriori == this->history_map.end())
         return this->get_state();
 
-    this->history_map[time] = history;
+    this->history_map.insert(std::pair<ros::Time, history_t>(time, history));
     this->pose_count++;
 
     this->runCorrectionFrom(apriori);
@@ -330,19 +339,19 @@ std::pair<kalman::range_ukf_t::x_t, kalman::range_ukf_t::P_t> Tracker::correctRa
 
     auto apriori = this->history_map.lower_bound(time);
 
-    if(apriori->first == time)
-    {
-        ROS_WARN("Measurement with this timestamp %f already exists", time.toSec());
-        return this->get_state();
-    }
+    // if(apriori->first == time)
+    // {
+    //     ROS_WARN("Measurement with this timestamp %f already exists", time.toSec());
+    //     return this->get_state();
+    // }
 
     apriori = std::prev(apriori);
 
     if (apriori == this->history_map.end())
         return this->get_state();
 
-    this->history_map[time] = history;
-    this->range_count++;
+    this->history_map.insert(std::pair<ros::Time, history_t>(time, history));
+    this->pose_count++;
 
     this->runCorrectionFrom(apriori);
 

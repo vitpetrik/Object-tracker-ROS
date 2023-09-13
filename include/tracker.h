@@ -71,7 +71,7 @@ private:
         kalman::P_t P;
     };
 
-    typedef std::map<ros::Time, struct history_t> history_map_t;  
+    typedef std::multimap<ros::Time, struct history_t> history_map_t;  
 
 
     int position_model_type;

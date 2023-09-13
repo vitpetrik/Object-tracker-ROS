@@ -111,7 +111,7 @@ void update_trackers()
 
         if (tracker->get_update_count() == 0)
         {
-            ROS_WARN("Deleting node 0x%X", id);
+            ROS_WARN("Deleting node 0x%lX", id);
             tracker_map.erase(it++);
 
             std::stringstream ss;
@@ -138,8 +138,6 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
     ros::Time stamp = msg.header.stamp;
     ros::Duration age = ros::Time::now() - stamp;
-
-    ROS_INFO("[OBJECT TRACKER] Pose message from %.3f", stamp.toSec());
 
     if (age.toSec() > time_to_live)
     {
@@ -228,9 +226,6 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
     ROS_DEBUG("[OBJECT TRACKER] Getting %ld range measurements", msg.ranges.size());
 
     ros::Time stamp = msg.header.stamp;
-
-    ROS_INFO("[OBJECT TRACKER] Range message from %.3f", stamp.toSec());
-
     ros::Duration age = ros::Time::now() - stamp;
 
     if (age.toSec() > time_to_live)
