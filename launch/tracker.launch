@@ -13,6 +13,9 @@
   <arg name="uav_name" default="$(optenv UAV_NAME uav1)"/>
   <arg name="profiler" default="$(optenv PROFILER false)" />
 
+  <arg name="WORLD_FILE" default="$(optenv WORLD_FILE)" />
+  <arg name="WORLD_NAME" default="$(optenv WORLD_NAME)" />
+
   <arg name="output_frame"      default="local_origin"/>
   <arg name="kalman_frame"      default="local_origin"/>
   <arg name="use_velocity"      default="false"/>
@@ -28,6 +31,10 @@
 
   <arg name="spectral_density_pose" default="3" />
   <arg name="spectral_density_rotation" default="1" />
+
+  <arg if="$(eval arg('WORLD_FILE') == '' and arg('WORLD_NAME') != '')" name="world_file" value="$(find mrs_uav_general)/config/worlds/world_$(env WORLD_NAME).yaml" />
+  <arg if="$(eval arg('WORLD_FILE') == '' and arg('WORLD_NAME') == '' and arg('simulation'))" name="world_file" value="$(find mrs_uav_general)/config/worlds/world_simulation.yaml" />
+  <arg if="$(eval arg('WORLD_FILE') != '')" name="world_file" value="$(arg WORLD_FILE)" />
 
   <group ns="$(arg uav_name)">
     <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
@@ -79,6 +86,15 @@
 
         <remap from="~poses" to="object_tracker/filtered_poses"/>
         <remap from="~transformed_poses" to="object_tracker/filtered_poses_fcu"/>
+    </node>
+
+    <node name="lla_input" pkg="object_tracker" type="lla_to_utm_node" output="screen" respawn="true">
+        <param name="uav_name"          value="$(arg uav_name)" />
+        <param name="output_frame"      value="$(arg uav_name)/stable_origin"/>
+
+        <remap from="~lla_in" to="uwb_range/gps_throttle" />
+        <remap from="~utm_out" to="object_tracker/utm" />
+        <rosparam file="$(arg world_file)"/>
     </node>
 
     <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL transformer_input/poses"/>

@@ -33,7 +33,7 @@
 #include "helperfun.h"
 
 #define DEFAULT_OUTPUT_FRAMERATE 20.0
-#define MIN_MEASUREMENTS_TO_VALIDATION 10
+#define MIN_MEASUREMENTS_TO_VALIDATION 1
 #define POS_THRESH 2.0
 #define MAH_THRESH 2.0
 #define YAW_THRESH 1.5
@@ -139,6 +139,8 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
     ros::Time stamp = msg.header.stamp;
     ros::Duration age = ros::Time::now() - stamp;
 
+    ROS_INFO("[OBJECT TRACKER] Pose message from %.3f", stamp.toSec());
+
     if (age.toSec() > time_to_live)
     {
         ROS_WARN("[OBJECT TRACKER] Range message is %.3f sec old", age.toSec());
@@ -226,6 +228,8 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
     ROS_DEBUG("[OBJECT TRACKER] Getting %ld range measurements", msg.ranges.size());
 
     ros::Time stamp = msg.header.stamp;
+
+    ROS_INFO("[OBJECT TRACKER] Range message from %.3f", stamp.toSec());
 
     ros::Duration age = ros::Time::now() - stamp;
 
@@ -320,6 +324,7 @@ int main(int argc, char **argv)
     transformer->setDefaultPrefix("");
 
     ros::Subscriber pose_sub = nh.subscribe("poses", 10, pose_callback);
+    ros::Subscriber utm_sub = nh.subscribe("utm", 10, pose_callback);
     ros::Subscriber range_sub = nh.subscribe("range", 10, range_callback);
 
     publish_pose = nh.advertise<mrs_msgs::PoseWithCovarianceArrayStamped>("filtered_poses", 10);
