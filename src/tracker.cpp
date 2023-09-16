@@ -121,10 +121,10 @@ kalman::predict_lkf_t::Q_t processNoiseMatrix(double dt, int position_model, int
 
 Tracker::Tracker()
 {
-    Tracker(ros::Time::now(), kalman::pose_lkf_t::z_t::Zero(), kalman::pose_lkf_t::R_t::Zero(), TRANSITION_MODEL_TYPE::CONSTANT_POSITION, TRANSITION_MODEL_TYPE::CONSTANT_POSITION, 1, 1);
+    Tracker(ros::Time::now(), TRANSITION_MODEL_TYPE::CONSTANT_POSITION, TRANSITION_MODEL_TYPE::CONSTANT_POSITION, 1, 1);
 }
 
-Tracker::Tracker(ros::Time time, kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::R_t R, int position_model, int rotation_model, double spectral_density_pose, double spectral_density_rotation, std::shared_ptr<mrs_lib::Transformer> tf_ptr)
+Tracker::Tracker(ros::Time time, int position_model, int rotation_model, double spectral_density_pose, double spectral_density_rotation, std::shared_ptr<mrs_lib::Transformer> tf_ptr)
 {
     this->transformer = tf_ptr;
 
@@ -137,57 +137,54 @@ Tracker::Tracker(ros::Time time, kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::
     this->range_count = 0;
     this->pose_count = 0;
 
-    kalman::x_t x = kalman::x_t::Zero();
+    this->history_map = history_map_t();
 
-    x[(int)STATE::X] = z[0];
-    x[(int)STATE::Y] = z[1];
-    x[(int)STATE::Z] = z[2];
-    x[(int)STATE::ROLL] = z[3];
-    x[(int)STATE::PITCH] = z[4];
-    x[(int)STATE::YAW] = z[5];
+    this->initializeFilters();
 
-    kalman::P_t P = kalman::P_t::Zero();
-
-    P((int)STATE::X, (int)STATE::X) = R(0, 0);
-    P((int)STATE::X, (int)STATE::Y) = R(0, 1);
-    P((int)STATE::X, (int)STATE::Z) = R(0, 2);
-    P((int)STATE::Y, (int)STATE::Y) = R(1, 1);
-    P((int)STATE::Y, (int)STATE::Z) = R(1, 2);
-    P((int)STATE::Z, (int)STATE::Z) = R(2, 2);
-
-    P((int)STATE::ROLL, (int)STATE::ROLL) = R(3, 3);
-    P((int)STATE::ROLL, (int)STATE::PITCH) = R(3, 4);
-    P((int)STATE::ROLL, (int)STATE::YAW) = R(3, 5);
-    P((int)STATE::PITCH, (int)STATE::PITCH) = R(4, 4);
-    P((int)STATE::PITCH, (int)STATE::YAW) = R(4, 5);
-    P((int)STATE::YAW, (int)STATE::YAW) = R(5, 5);
-
-    P.triangularView<Eigen::Lower>() = P.transpose();
-
-    history_t history = {std::variant<pose_measurement_t, range_measurement_t>{pose_measurement_t{z, R}}, x, P};
-    this->history_map.insert(std::pair<ros::Time, history_t>(time, history));
-
-    kalman::pose_lkf_t::H_t H_matrix = kalman::pose_lkf_t::H_t::Zero();
-
-    H_matrix(0, (int)STATE::X) = 1;
-    H_matrix(1, (int)STATE::Y) = 1;
-    H_matrix(2, (int)STATE::Z) = 1;
-    H_matrix(3, (int)STATE::ROLL) = 1;
-    H_matrix(4, (int)STATE::PITCH) = 1;
-    H_matrix(5, (int)STATE::YAW) = 1;
-
-    this->pose_lkf = kalman::pose_lkf_t(kalman::pose_lkf_t::A_t::Identity(),
-                                        kalman::pose_lkf_t::B_t::Zero(),
-                                        H_matrix);
-    this->predict_lkf = kalman::predict_lkf_t(kalman::predict_lkf_t::A_t::Identity(),
-                                              kalman::predict_lkf_t::B_t::Zero(),
-                                              kalman::predict_lkf_t::H_t::Identity());
-    this->range_ukf = kalman::range_ukf_t(transition_ukf, observe_ukf);
     return;
 }
 
 Tracker::~Tracker()
 {
+    return;
+}
+
+void Tracker::initializeFilters()
+{
+    kalman::pose_lkf_t::H_t H_matrix_pose = kalman::pose_lkf_t::H_t::Zero();
+
+    H_matrix_pose(0, (int)STATE::X) = 1;
+    H_matrix_pose(1, (int)STATE::Y) = 1;
+    H_matrix_pose(2, (int)STATE::Z) = 1;
+    H_matrix_pose(3, (int)STATE::ROLL) = 1;
+    H_matrix_pose(4, (int)STATE::PITCH) = 1;
+    H_matrix_pose(5, (int)STATE::YAW) = 1;
+
+    kalman::pose2d_lkf_t::H_t H_matrix_pose2d = kalman::pose2d_lkf_t::H_t::Zero();
+
+    H_matrix_pose2d(0, (int)STATE::X) = 1;
+    H_matrix_pose2d(1, (int)STATE::Y) = 1;
+
+    kalman::pose3d_lkf_t::H_t H_matrix_pose3d = kalman::pose3d_lkf_t::H_t::Zero();
+
+    H_matrix_pose3d(0, (int)STATE::X) = 1;
+    H_matrix_pose3d(1, (int)STATE::Y) = 1;
+    H_matrix_pose3d(2, (int)STATE::Z) = 1;
+
+    this->pose_lkf = kalman::pose_lkf_t(kalman::pose_lkf_t::A_t::Identity(),
+                                        kalman::pose_lkf_t::B_t::Zero(),
+                                        H_matrix_pose);
+    this->pose2d_lkf = kalman::pose2d_lkf_t(kalman::pose2d_lkf_t::A_t::Identity(),
+                                            kalman::pose2d_lkf_t::B_t::Zero(),
+                                            H_matrix_pose2d);
+    this->pose3d_lkf = kalman::pose3d_lkf_t(kalman::pose3d_lkf_t::A_t::Identity(),
+                                            kalman::pose3d_lkf_t::B_t::Zero(),
+                                            H_matrix_pose3d);
+    this->predict_lkf = kalman::predict_lkf_t(kalman::predict_lkf_t::A_t::Identity(),
+                                              kalman::predict_lkf_t::B_t::Zero(),
+                                              kalman::predict_lkf_t::H_t::Identity());
+    this->range_ukf = kalman::range_ukf_t(transition_ukf, observe_ukf);
+
     return;
 }
 
@@ -214,7 +211,7 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time, bool apply_
 
 void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
 {
-    if (std::next(apriori) == this->history_map.end())
+    if (apriori == this->history_map.end() or std::next(apriori) == this->history_map.end())
         return;
 
     auto x = apriori->second.x;
@@ -229,9 +226,9 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
         kalman::predict_lkf_t::statecov_t statecov = {x, P, apriori->first};
         this->predict_lkf.A = transitionMatrix(dt.toSec(), this->position_model_type, this->rotation_model_type);
         statecov = this->predict_lkf.predict(statecov,
-                                            kalman::predict_lkf_t::u_t::Zero(),
-                                            processNoiseMatrix(dt.toSec(), this->position_model_type, this->rotation_model_type, this->spectral_density_pose, this->spectral_density_rotation),
-                                            dt.toSec());
+                                             kalman::predict_lkf_t::u_t::Zero(),
+                                             processNoiseMatrix(dt.toSec(), this->position_model_type, this->rotation_model_type, this->spectral_density_pose, this->spectral_density_rotation),
+                                             dt.toSec());
         x = statecov.x;
         P = statecov.P;
     }
@@ -239,11 +236,10 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     {
         ROS_WARN("Time difference between measurements is Negative!");
     }
-    else 
+    else
     {
         ROS_WARN("Time difference between measurements is Zero!");
     }
-
 
     if (history.measurement.index() == 0)
     {
@@ -277,9 +273,53 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     }
     else if (history.measurement.index() == 1)
     {
-        kalman::range_ukf_t::z_t z = std::get<1>(history.measurement).z;
-        kalman::range_ukf_t::R_t R = std::get<1>(history.measurement).R;
-        geometry_msgs::TransformStamped transformation = std::get<1>(history.measurement).transformation;
+        kalman::pose2d_lkf_t::z_t z = std::get<1>(history.measurement).z;
+        kalman::pose2d_lkf_t::R_t R = std::get<1>(history.measurement).R;
+
+        kalman::pose2d_lkf_t::statecov_t statecov = {x, P, apriori->first};
+
+        try
+        {
+            statecov = this->pose2d_lkf.correct(statecov, z, R);
+        }
+        catch ([[maybe_unused]] std::exception &e)
+        {
+            ROS_WARN("Could retrieve matrix inversion");
+        }
+
+        x = statecov.x;
+        P = statecov.P;
+
+        history.x = x;
+        history.P = P;
+    }
+    else if (history.measurement.index() == 2)
+    {
+        kalman::pose3d_lkf_t::z_t z = std::get<2>(history.measurement).z;
+        kalman::pose3d_lkf_t::R_t R = std::get<2>(history.measurement).R;
+
+        kalman::pose3d_lkf_t::statecov_t statecov = {x, P, apriori->first};
+
+        try
+        {
+            statecov = this->pose3d_lkf.correct(statecov, z, R);
+        }
+        catch ([[maybe_unused]] std::exception &e)
+        {
+            ROS_WARN("Could retrieve matrix inversion");
+        }
+
+        x = statecov.x;
+        P = statecov.P;
+
+        history.x = x;
+        history.P = P;
+    }
+    else if (history.measurement.index() == 3)
+    {
+        kalman::range_ukf_t::z_t z = std::get<3>(history.measurement).z;
+        kalman::range_ukf_t::R_t R = std::get<3>(history.measurement).R;
+        geometry_msgs::TransformStamped transformation = std::get<3>(history.measurement).transformation;
 
         auto transformed = this->transform(transformation, x, P);
 
@@ -302,58 +342,140 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
         history.x = x;
         history.P = P;
     }
+    else
+    {
+        ROS_WARN("Unknown measurement type");
+    }
 
     this->runCorrectionFrom(posteriori);
 
     return;
 }
 
-std::pair<kalman::pose_lkf_t::x_t, kalman::pose_lkf_t::P_t> Tracker::correctPose(ros::Time time, kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::R_t R, bool apply_update)
+std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, measurement_t measurement, kalman::x_t x, kalman::P_t P)
 {
-    history_t history = {std::variant<pose_measurement_t, range_measurement_t>{pose_measurement_t{z, R}}, kalman::x_t::Zero(), kalman::P_t::Zero()};
+    history_t history = {measurement, x, P};
 
-    auto apriori = this->history_map.lower_bound(time);
+    // Handle empty map
 
-    // if(apriori->first == time)
-    // {
-    //     ROS_WARN("Measurement with this timestamp %f already exists", time.toSec());
-    //     return this->get_state();
-    // }
+    if(this->history_map.empty())
+    {
+        if(measurement.index() == 3)
+            return this->get_state();
 
-    apriori = std::prev(apriori);
-    
-    if (apriori == this->history_map.end())
+        this->history_map.insert(std::make_pair(time, history));
+        this->pose_count += 1;
         return this->get_state();
+    }
 
-    this->history_map.insert(std::pair<ros::Time, history_t>(time, history));
-    this->pose_count++;
+    history_map_t::iterator bound = this->history_map.lower_bound(time);
+    history_map_t::iterator apriori = this->history_map.begin();
 
+    if(bound == this->history_map.begin())
+    {
+        if(measurement.index() == 3)
+            return this->get_state();
+
+        this->history_map.insert(std::make_pair(time, history));
+        apriori = this->history_map.begin();
+    }
+    else 
+    {
+        apriori = std::prev(bound);
+        this->history_map.insert(std::make_pair(time, history));
+    }
+
+    this->pose_count += 1;
     this->runCorrectionFrom(apriori);
 
     return this->get_state();
 }
 
-std::pair<kalman::range_ukf_t::x_t, kalman::range_ukf_t::P_t> Tracker::correctRange(ros::Time time, kalman::range_ukf_t::z_t z, kalman::range_ukf_t::R_t R, geometry_msgs::TransformStamped transformation, bool apply_update)
+std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalman::pose_lkf_t::z_t z, kalman::pose_lkf_t::R_t R)
 {
-    history_t history = {std::variant<pose_measurement_t, range_measurement_t>{range_measurement_t{z, R, transformation}}, kalman::x_t::Zero(), kalman::P_t::Zero()};
+    measurement_t measurement = {pose_measurement_t{z, R}};
 
-    auto apriori = this->history_map.lower_bound(time);
+    kalman::x_t x = kalman::x_t::Zero();
+    kalman::P_t P = 1000*kalman::P_t::Identity();
 
-    // if(apriori->first == time)
-    // {
-    //     ROS_WARN("Measurement with this timestamp %f already exists", time.toSec());
-    //     return this->get_state();
-    // }
+    x[(int)STATE::X] = z[0];
+    x[(int)STATE::Y] = z[1];
+    x[(int)STATE::Z] = z[2];
+    x[(int)STATE::ROLL] = z[3];
+    x[(int)STATE::PITCH] = z[4];
+    x[(int)STATE::YAW] = z[5];
 
-    apriori = std::prev(apriori);
+    P((int)STATE::X, (int)STATE::X) = R(0, 0);
+    P((int)STATE::X, (int)STATE::Y) = R(0, 1);
+    P((int)STATE::X, (int)STATE::Z) = R(0, 2);
+    P((int)STATE::Y, (int)STATE::Y) = R(1, 1);
+    P((int)STATE::Y, (int)STATE::Z) = R(1, 2);
+    P((int)STATE::Z, (int)STATE::Z) = R(2, 2);
 
-    if (apriori == this->history_map.end())
-        return this->get_state();
+    P((int)STATE::ROLL, (int)STATE::ROLL) = R(3, 3);
+    P((int)STATE::ROLL, (int)STATE::PITCH) = R(3, 4);
+    P((int)STATE::ROLL, (int)STATE::YAW) = R(3, 5);
+    P((int)STATE::PITCH, (int)STATE::PITCH) = R(4, 4);
+    P((int)STATE::PITCH, (int)STATE::YAW) = R(4, 5);
+    P((int)STATE::YAW, (int)STATE::YAW) = R(5, 5);
 
-    this->history_map.insert(std::pair<ros::Time, history_t>(time, history));
-    this->pose_count++;
+    P.triangularView<Eigen::Lower>() = P.transpose();
 
-    this->runCorrectionFrom(apriori);
+    this->addMeasurement(time, measurement, x, P);
+
+    return this->get_state();
+}
+
+std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalman::pose2d_lkf_t::z_t z, kalman::pose2d_lkf_t::R_t R)
+{
+    measurement_t measurement = {pose2d_measurement_t{z, R}};
+
+    kalman::x_t x = kalman::x_t::Zero();
+    kalman::P_t P = 1000*kalman::P_t::Identity();
+
+    x[(int)STATE::X] = z[0];
+    x[(int)STATE::Y] = z[1];
+
+    P((int)STATE::X, (int)STATE::X) = R(0, 0);
+    P((int)STATE::X, (int)STATE::Y) = R(0, 1);
+    P((int)STATE::Y, (int)STATE::Y) = R(1, 1);
+
+    P.triangularView<Eigen::Lower>() = P.transpose();
+
+    this->addMeasurement(time, measurement, x, P);
+
+    return this->get_state();
+}
+
+std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalman::pose3d_lkf_t::z_t z, kalman::pose3d_lkf_t::R_t R)
+{
+    measurement_t measurement = {pose3d_measurement_t{z, R}};
+
+    kalman::x_t x = kalman::x_t::Zero();
+    kalman::P_t P = 1000*kalman::P_t::Identity();
+
+    x[(int)STATE::X] = z[0];
+    x[(int)STATE::Y] = z[1];
+    x[(int)STATE::Z] = z[2];
+
+    P((int)STATE::X, (int)STATE::X) = R(0, 0);
+    P((int)STATE::X, (int)STATE::Y) = R(0, 1);
+    P((int)STATE::X, (int)STATE::Z) = R(0, 2);
+    P((int)STATE::Y, (int)STATE::Y) = R(1, 1);
+    P((int)STATE::Y, (int)STATE::Z) = R(1, 2);
+    P((int)STATE::Z, (int)STATE::Z) = R(2, 2);
+
+    P.triangularView<Eigen::Lower>() = P.transpose();
+
+    this->addMeasurement(time, measurement, x, P);
+
+    return this->get_state();
+}
+
+std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalman::range_ukf_t::z_t z, kalman::range_ukf_t::R_t R, geometry_msgs::TransformStamped transformation)
+{
+    measurement_t measurement = {range_measurement_t{z, R, transformation}};
+    this->addMeasurement(time, measurement);
 
     return this->get_state();
 }
@@ -448,17 +570,16 @@ int Tracker::delete_old(ros::Time deadline)
 
     for (auto it = this->history_map.cbegin(); it != this->history_map.cend() /* not hoisted */; /* no increment */)
     {
-        if(deadline < it->first)
+        if (deadline < it->first)
             break;
 
-        if(it->second.measurement.index() == 0)
+        if (it->second.measurement.index() == 0)
             this->pose_count--;
-        else if(it->second.measurement.index() == 1)
+        else if (it->second.measurement.index() == 1)
             this->range_count--;
-        this->history_map.erase(it++);    // or "it = m.erase(it)" since C++11
+        this->history_map.erase(it++); // or "it = m.erase(it)" since C++11
         ++count;
     }
 
     return count;
-
 }

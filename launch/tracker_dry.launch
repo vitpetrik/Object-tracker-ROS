@@ -80,7 +80,7 @@
 
         <remap from="~poses" to="object_tracker_dry/filtered_poses"/>
         <remap from="~transformed_poses" to="object_tracker_dry/filtered_poses_fcu"/>
-    </node> -->
+    </node>
 
     <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL transformer_input_dry/poses"/>
     <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR transformer_input_dry/poses"/>
