@@ -447,7 +447,7 @@ int main(int argc, char **argv)
     param_loader.loadParam("use_uwb", use_uwb, true);
     param_loader.loadParam("use_gps", use_gps, true);
 
-    if(not(use uvdar or use_gps))
+    if(not(use_uvdar or use_gps))
     {
         ROS_ERROR("[OBJECT TRACKER]: At least one of the sensors must be enabled.");
         return -1;

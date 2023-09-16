@@ -150,7 +150,6 @@ include_directories(
 ## The recommended prefix ensures that target names across packages don't collide
 add_executable(${PROJECT_NAME}_node src/object_tracker.cpp src/tracker.cpp src/helper.cpp)
 add_executable(transformer_node src/transformer.cpp src/helper.cpp)
-add_executable(lla_to_utm_node src/lla_to_utm.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -162,7 +161,6 @@ add_executable(lla_to_utm_node src/lla_to_utm.cpp)
 ## same as for the library above
 add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies( transformer_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-add_dependencies( lla_to_utm_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(${PROJECT_NAME}_node
@@ -170,10 +168,6 @@ target_link_libraries(${PROJECT_NAME}_node
   ${EIGEN3_LIBRARIES}
 )
 target_link_libraries(transformer_node
-  ${catkin_LIBRARIES}
-  ${EIGEN3_LIBRARIES}
-)
-target_link_libraries(lla_to_utm_node
   ${catkin_LIBRARIES}
   ${EIGEN3_LIBRARIES}
 )

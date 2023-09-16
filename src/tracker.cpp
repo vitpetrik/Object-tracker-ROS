@@ -211,7 +211,7 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time, bool apply_
 
 void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
 {
-    if (apriori == this->history_map.end() or std::next(apriori) == this->history_map.end())
+    if (std::next(apriori) == this->history_map.end())
         return;
 
     auto x = apriori->second.x;
@@ -357,10 +357,9 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, meas
     history_t history = {measurement, x, P};
 
     // Handle empty map
-
     if(this->history_map.empty())
     {
-        if(measurement.index() == 3)
+        if(x.array().isNaN().any() or P.array().isNaN().any())
             return this->get_state();
 
         this->history_map.insert(std::make_pair(time, history));
@@ -373,7 +372,7 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, meas
 
     if(bound == this->history_map.begin())
     {
-        if(measurement.index() == 3)
+        if(x.array().isNaN().any() or P.array().isNaN().any())
             return this->get_state();
 
         this->history_map.insert(std::make_pair(time, history));
