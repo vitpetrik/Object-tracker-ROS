@@ -447,6 +447,12 @@ int main(int argc, char **argv)
     param_loader.loadParam("use_uwb", use_uwb, true);
     param_loader.loadParam("use_gps", use_gps, true);
 
+    if(not(use uvdar or use_gps))
+    {
+        ROS_ERROR("[OBJECT TRACKER]: At least one of the sensors must be enabled.");
+        return -1;
+    }
+
     bool is_origin_param_ok = true;
     param_loader.loadParam("utm_origin_units", _utm_origin_units_);
     if (_utm_origin_units_ == 0)
