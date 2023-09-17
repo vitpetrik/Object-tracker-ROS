@@ -92,7 +92,7 @@ void publishStates()
         if (tracker->get_update_count() < MIN_MEASUREMENTS_TO_VALIDATION)
             continue;
 
-        std::pair<kalman::x_t, kalman::P_t> result = tracker->predict(msg.header.stamp, false);
+        std::pair<kalman::x_t, kalman::P_t> result = tracker->predict(msg.header.stamp);
 
         geometry_msgs::PoseWithCovariance pose = tracker->get_PoseWithCovariance(result.first, result.second);
 
@@ -413,12 +413,6 @@ void gps_cb(const mrs_msgs::NavSatFixArrayStamped &msg)
     return;
 }
 
-void updateCallback(const ros::TimerEvent &event)
-{
-    update_trackers();
-    publishStates();
-}
-
 int main(int argc, char **argv)
 {
     std::string uav_name;
@@ -489,7 +483,16 @@ int main(int argc, char **argv)
     publish_pose = nh.advertise<mrs_msgs::PoseWithCovarianceArrayStamped>("filtered_poses", 10);
     uav_status = nh.advertise<std_msgs::String>("uav_status", 1);
 
-    ros::Timer timer = nh.createTimer(ros::Duration(1/output_framerate), updateCallback);
+    ros::Rate publish_rate(output_framerate);
+
+    while (ros::ok())
+    {
+        update_trackers();
+        publishStates();
+
+        ros::spinOnce();
+        publish_rate.sleep();
+    }
 
     ros::spin();
 

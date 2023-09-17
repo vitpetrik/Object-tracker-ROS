@@ -122,7 +122,7 @@ public:
 
     ~Tracker();
 
-    std::pair<kalman::x_t, kalman::P_t> predict(ros::Time, bool apply_update = false);
+    std::pair<kalman::x_t, kalman::P_t> predict(ros::Time);
 
     std::pair<kalman::x_t, kalman::P_t> addMeasurement(ros::Time, kalman::pose_lkf_t::z_t, kalman::pose_lkf_t::R_t);
 

@@ -188,7 +188,7 @@ void Tracker::initializeFilters()
     return;
 }
 
-std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time, bool apply_update)
+std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time)
 {
     std::pair<kalman::x_t, kalman::P_t> state = this->get_state();
     kalman::x_t x = state.first;
