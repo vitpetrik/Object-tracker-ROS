@@ -13,6 +13,8 @@
   <arg name="uav_name" default="$(optenv UAV_NAME uav1)"/>
   <arg name="profiler" default="$(optenv PROFILER false)" />
 
+  <arg name="node_name" default="object_tracker"/>
+
   <arg name="WORLD_FILE" default="$(optenv WORLD_FILE)" />
   <arg name="WORLD_NAME" default="$(optenv WORLD_NAME)" />
 
@@ -42,7 +44,7 @@
   <arg if="$(eval arg('WORLD_FILE') != '')" name="world_file" value="$(arg WORLD_FILE)" />
 
   <group ns="$(arg uav_name)">
-    <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
+    <node name="$(arg node_name)" pkg="object_tracker" type="object_tracker_node" output="screen" respawn="true">
         <param name="uav_name"          value="$(arg uav_name)" />
         <param name="kalman_frame"      value="$(arg kalman_frame)"/>
         <param name="gps_frame"         value="$(arg gps_frame)"/>
@@ -69,9 +71,9 @@
         <rosparam file="$(arg world_file)"/>
     </node>
 
-    <node name="relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL object_tracker/uvdar"/>
-    <node name="relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR object_tracker/uvdar"/>
-    <node name="relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB object_tracker/uvdar"/>
+    <node name="$(arg node_name)_relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL $(arg node_name)/uvdar"/>
+    <node name="$(arg node_name)_relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR $(arg node_name)/uvdar"/>
+    <node name="$(arg node_name)_relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB $(arg node_name)/uvdar"/>
   </group>
 
 </launch>
