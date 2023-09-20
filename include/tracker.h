@@ -22,6 +22,7 @@
 
 #include <map>
 #include <variant>
+#include <optional>
 
 #include <mrs_lib/lkf.h>
 #include <mrs_lib/ukf.h>
@@ -87,7 +88,7 @@ private:
         kalman::P_t P;
     };
 
-    typedef std::multimap<ros::Time, struct history_t> history_map_t;  
+    using history_map_t = std::multimap<ros::Time, struct history_t>;  
 
     int position_model_type;
     int rotation_model_type;
@@ -112,13 +113,13 @@ private:
 
     void initializeFilters();
 
-    std::pair<kalman::x_t, kalman::P_t> addMeasurement(ros::Time time, measurement_t measurement, kalman::x_t x = kalman::x_t::Zero()/0, kalman::P_t P = kalman::P_t::Zero()/0);
+    std::optional<Tracker::history_map_t::iterator> addMeasurement(ros::Time time, measurement_t measurement, kalman::x_t x = kalman::x_t::Zero()/0, kalman::P_t P = kalman::P_t::Zero()/0);
 
 
 public:
     Tracker();
 
-    Tracker(ros::Time time, int position_model, int rotation_model, double spectral_density_pose, double spectral_density_rotation, std::shared_ptr<mrs_lib::Transformer> tf_ptr = nullptr);
+    Tracker(int position_model, int rotation_model, double spectral_density_pose, double spectral_density_rotation, std::shared_ptr<mrs_lib::Transformer> tf_ptr = nullptr);
 
     ~Tracker();
 

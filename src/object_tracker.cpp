@@ -209,8 +209,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
         if (not tracker_map.count(measurement.id))
         {
             ROS_INFO_THROTTLE(1.0, "[OBJECT TRACKER] Creating new tracker for object ID: 0x%lX", measurement.id);
-            tracker_map[measurement.id] = std::make_shared<Tracker>(stamp,
-                                                                    kalman_pose_model,
+            tracker_map[measurement.id] = std::make_shared<Tracker>(kalman_pose_model,
                                                                     kalman_rotation_model,
                                                                     spectral_density_pose,
                                                                     spectral_density_rotation,
@@ -349,8 +348,7 @@ void gps_cb(const mrs_msgs::NavSatFixArrayStamped &msg)
         if (not tracker_map.count(measurement.id))
         {
             ROS_INFO_THROTTLE(1.0, "[OBJECT TRACKER] Creating new tracker for object ID: 0x%lX", measurement.id);
-            tracker_map[measurement.id] = std::make_shared<Tracker>(stamp,
-                                                                    kalman_pose_model,
+            tracker_map[measurement.id] = std::make_shared<Tracker>(kalman_pose_model,
                                                                     kalman_rotation_model,
                                                                     spectral_density_pose,
                                                                     spectral_density_rotation,
