@@ -29,14 +29,17 @@ kalman::range_ukf_t::x_t transition_ukf(const kalman::range_ukf_t::x_t &x, const
     return x;
 }
 
+Eigen::Vector3d ukf_offset = Eigen::Vector3d::Zero() / 0;
 kalman::range_ukf_t::z_t observe_ukf(const kalman::range_ukf_t::x_t &x)
 {
     Eigen::VectorXd pose(3);
 
     pose << x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z];
-    kalman::range_ukf_t::z_t z;
+    pose -= ukf_offset;
 
+    kalman::range_ukf_t::z_t z;
     z << pose.norm();
+
     return z;
 }
 
@@ -184,6 +187,7 @@ void Tracker::initializeFilters()
                                               kalman::predict_lkf_t::B_t::Zero(),
                                               kalman::predict_lkf_t::H_t::Identity());
     this->range_ukf = kalman::range_ukf_t(transition_ukf, observe_ukf);
+    this->range_ukf.setConstants(0.1, 1, 2);
 
     return;
 }
@@ -205,6 +209,7 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time)
     statecov = this->predict_lkf.predict(statecov, kalman::predict_lkf_t::u_t::Zero(), processNoiseMatrix(dt, this->position_model_type, this->rotation_model_type, this->spectral_density_pose, this->spectral_density_rotation), dt);
     x = statecov.x;
     P = statecov.P;
+
     return std::make_pair(x, P);
 }
 
@@ -320,9 +325,12 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
         kalman::range_ukf_t::R_t R = std::get<3>(history.measurement).R;
         geometry_msgs::TransformStamped transformation = std::get<3>(history.measurement).transformation;
 
-        auto transformed = this->transform(transformation, x, P);
+        Eigen::Vector3d translate = Eigen::Vector3d(transformation.transform.translation.x,
+                                                    transformation.transform.translation.y,
+                                                    transformation.transform.translation.z);
+        ukf_offset = translate;
 
-        kalman::range_ukf_t::statecov_t statecov = {transformed.first, transformed.second, apriori->first};
+        kalman::range_ukf_t::statecov_t statecov = {x, P, apriori->first};
 
         try
         {
@@ -333,10 +341,10 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
             ROS_WARN("Could retrieve matrix inversion");
         }
 
-        auto transformed_back = this->transform(this->transformer->inverse(transformation), statecov.x, statecov.P);
+        ukf_offset = Eigen::Vector3d::Zero() / 0;
 
-        x = transformed_back.first;
-        P = transformed_back.second;
+        x = statecov.x;
+        P = statecov.P;
 
         history.x = x;
         history.P = P;
@@ -411,7 +419,7 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalm
 
     auto it = this->addMeasurement(time, measurement, x, P);
 
-    if(it)
+    if (it)
         this->pose_count++;
 
     return this->get_state();
@@ -435,7 +443,7 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalm
 
     auto it = this->addMeasurement(time, measurement, x, P);
 
-    if(it)
+    if (it)
         this->pose_count++;
 
     return this->get_state();
@@ -463,7 +471,7 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalm
 
     auto it = this->addMeasurement(time, measurement, x, P);
 
-    if(it)
+    if (it)
         this->pose_count++;
 
     return this->get_state();
