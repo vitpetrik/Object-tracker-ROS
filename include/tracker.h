@@ -23,6 +23,7 @@
 #include <map>
 #include <variant>
 #include <optional>
+#include <mutex>
 
 #include <mrs_lib/lkf.h>
 #include <mrs_lib/ukf.h>
@@ -89,6 +90,8 @@ private:
     };
 
     using history_map_t = std::multimap<ros::Time, struct history_t>;  
+
+    std::mutex tracker_mutex;
 
     int position_model_type;
     int rotation_model_type;

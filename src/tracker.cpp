@@ -24,25 +24,6 @@
 #include <geometry_msgs/TwistWithCovariance.h>
 #include <geometry_msgs/TwistWithCovarianceStamped.h>
 
-kalman::range_ukf_t::x_t transition_ukf(const kalman::range_ukf_t::x_t &x, const kalman::range_ukf_t::u_t &, [[maybe_unused]] double dt)
-{
-    return x;
-}
-
-Eigen::Vector3d ukf_offset = Eigen::Vector3d::Zero() / 0;
-kalman::range_ukf_t::z_t observe_ukf(const kalman::range_ukf_t::x_t &x)
-{
-    Eigen::VectorXd pose(3);
-
-    pose << x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z];
-    pose -= ukf_offset;
-
-    kalman::range_ukf_t::z_t z;
-    z << pose.norm();
-
-    return z;
-}
-
 Eigen::MatrixXd modelMatrix(double dt, int model_type)
 {
     Eigen::Matrix2d model_block = Eigen::Matrix2d::Zero();
@@ -186,8 +167,9 @@ void Tracker::initializeFilters()
     this->predict_lkf = kalman::predict_lkf_t(kalman::predict_lkf_t::A_t::Identity(),
                                               kalman::predict_lkf_t::B_t::Zero(),
                                               kalman::predict_lkf_t::H_t::Identity());
-    this->range_ukf = kalman::range_ukf_t(transition_ukf, observe_ukf);
-    this->range_ukf.setConstants(0.1, 1, 2);
+    this->range_ukf = kalman::range_ukf_t();
+
+    this->range_ukf.setConstants(1e-3, 1, 2);
 
     return;
 }
@@ -328,7 +310,20 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
         Eigen::Vector3d translate = Eigen::Vector3d(transformation.transform.translation.x,
                                                     transformation.transform.translation.y,
                                                     transformation.transform.translation.z);
-        ukf_offset = translate;
+
+        auto observe_ukf_lambda = [&](const kalman::range_ukf_t::x_t &x) -> kalman::range_ukf_t::z_t
+        {
+            Eigen::VectorXd pose(3);
+
+            pose << x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z];
+            pose -= translate;
+
+            kalman::range_ukf_t::z_t z;
+            z << pose.norm();
+
+            return z;
+        };
+        this->range_ukf.setObservationModel(observe_ukf_lambda);
 
         kalman::range_ukf_t::statecov_t statecov = {x, P, apriori->first};
 
@@ -340,8 +335,6 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
         {
             ROS_WARN("Could retrieve matrix inversion");
         }
-
-        ukf_offset = Eigen::Vector3d::Zero() / 0;
 
         x = statecov.x;
         P = statecov.P;
@@ -361,6 +354,7 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
 
 std::optional<Tracker::history_map_t::iterator> Tracker::addMeasurement(ros::Time time, measurement_t measurement, kalman::x_t x, kalman::P_t P)
 {
+    std::lock_guard<std::mutex> guard(this->tracker_mutex);
     history_t history = {measurement, x, P};
 
     // Handle empty map
@@ -571,6 +565,7 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::transform(geometry_msgs::TransformS
 
 int Tracker::delete_old(ros::Time deadline)
 {
+    std::lock_guard<std::mutex> guard(this->tracker_mutex);
     int count = 0;
 
     for (auto it = this->history_map.cbegin(); it != this->history_map.cend() /* not hoisted */; /* no increment */)
