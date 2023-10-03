@@ -421,7 +421,6 @@ int main(int argc, char **argv)
 
     ROS_INFO("[OBJECT TRACKER]: Node set");
 
-    transformer = std::make_shared<mrs_lib::Transformer>("OBJECT TRACKER", ros::Duration(0.1));
     mrs_lib::ParamLoader param_loader(nh, "Object tracker");
 
     param_loader.loadParam("uav_name", uav_name);
@@ -438,6 +437,11 @@ int main(int argc, char **argv)
     param_loader.loadParam("use_uvdar", use_uvdar, true);
     param_loader.loadParam("use_uwb", use_uwb, true);
     param_loader.loadParam("use_gps", use_gps, true);
+
+    transformer = std::make_shared<mrs_lib::Transformer>("OBJECT TRACKER", ros::Duration(time_to_live));
+
+    transformer->retryLookupNewest(true);
+    transformer->setDefaultPrefix("");
 
     if(not(use_uvdar or use_gps))
     {
@@ -470,8 +474,6 @@ int main(int argc, char **argv)
         _utm_origin_x_ = nan("");
         _utm_origin_y_ = nan("");
     }
-
-    transformer->setDefaultPrefix("");
 
     ros::Subscriber pose_sub, range_sub, rtk_gps_sub;
     pose_sub = nh.subscribe("uvdar", 10, pose_callback);
