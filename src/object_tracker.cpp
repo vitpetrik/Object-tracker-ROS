@@ -62,14 +62,6 @@ double time_to_live;
 
 bool use_uvdar, use_uwb, use_gps;
 
-// Variables for GPS to UTM conversion
-double _utm_origin_x_, _utm_origin_y_;
-int _utm_origin_units_ = 0;
-double rtk_local_origin_z_ = 0.0;
-double land_position_x_, land_position_y_;
-bool land_position_set_ = false;
-double gps_altitude_ = 0;
-
 void publishStates()
 {
     ros::Time stamp = ros::Time::now();
@@ -168,7 +160,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
     if (msg.header.frame_id != kalman_frame)
     {
-        transformation = transformer->getTransform(msg.header.frame_id, kalman_frame, ros::Time(0));
+        transformation = transformer->getTransform(msg.header.frame_id, kalman_frame, stamp);
 
         if (not transformation)
         {
@@ -310,12 +302,6 @@ void gps_cb(const mrs_msgs::NavSatFixArrayStamped &msg)
     if (use_gps == false or msg.nav_sat_fixes.size() == 0)
         return;
 
-    if (isnan(_utm_origin_x_) or isnan(_utm_origin_y_))
-    {
-        ROS_ERROR_THROTTLE(1.0, "[OBJECT TRACKER] UTM origin not set, cannot convert GPS to UTM");
-        return;
-    }
-
     ros::Time stamp = msg.header.stamp;
     ros::Duration age = ros::Time::now() - stamp;
 
@@ -325,6 +311,16 @@ void gps_cb(const mrs_msgs::NavSatFixArrayStamped &msg)
         std_msgs::String msg_status;
         msg_status.data = std::string("-id error_msg -R [OT] got old RANGE").c_str();
         uav_status.publish(msg_status);
+        return;
+    }
+
+    std::optional<geometry_msgs::TransformStamped> transformation;
+
+    transformation = transformer->getTransform(gps_frame, kalman_frame, stamp);
+
+    if (not transformation)
+    {
+        ROS_WARN("[OBJECT TRACKER] Not found any transformation from GPS to kalman frame");
         return;
     }
 
@@ -368,13 +364,24 @@ void gps_cb(const mrs_msgs::NavSatFixArrayStamped &msg)
 
         // convert it to UTM
 
-        double x, y;
-        mrs_lib::UTM(measurement.gps.latitude, measurement.gps.longitude, &x, &y);
+        geometry_msgs::PointStamped point;
+        point.point.z = 0;
+        mrs_lib::UTM(measurement.gps.latitude, measurement.gps.longitude, &point.point.x, &point.point.y);
+
+        std::optional<geometry_msgs::PointStamped> point_transformed = transformer->transform(point, transformation.value());
+        if (point_transformed)
+        {
+            point = point_transformed.value();
+        }
+        else
+        {
+            ROS_WARN("[OBJECT TRACKER] Could not transform GPS measurement to kalman frame");
+            continue;
+        }
 
         if (not isnan(measurement.gps.altitude))
         {
-            kalman::pose3d_lkf_t::z_t z = kalman::pose3d_lkf_t::z_t(x, y, measurement.gps.altitude);
-            z -= kalman::pose3d_lkf_t::z_t(_utm_origin_x_, _utm_origin_y_, 0);
+            kalman::pose3d_lkf_t::z_t z = kalman::pose3d_lkf_t::z_t(point.point.x, point.point.y, measurement.gps.altitude);
 
             ROS_INFO_THROTTLE(1.0, "[OBJECT TRACKER] GPS measurement for ID 0x%lX: x: %.2f, y: %.2f, z: %.2f", measurement.id, z(0), z(1), z(2));
 
@@ -392,8 +399,7 @@ void gps_cb(const mrs_msgs::NavSatFixArrayStamped &msg)
         }
         else
         {
-            kalman::pose2d_lkf_t::z_t z = kalman::pose2d_lkf_t::z_t(x, y);
-            z -= kalman::pose2d_lkf_t::z_t(_utm_origin_x_, _utm_origin_y_);
+            kalman::pose2d_lkf_t::z_t z = kalman::pose2d_lkf_t::z_t(point.point.x, point.point.y);
 
             ROS_INFO_THROTTLE(1.0, "[OBJECT TRACKER] GPS measurement for ID 0x%lX: x: %.2f, y: %.2f", measurement.id, z(0), z(1));
 
@@ -425,7 +431,7 @@ int main(int argc, char **argv)
 
     param_loader.loadParam("uav_name", uav_name);
     param_loader.loadParam("kalman_frame", kalman_frame, uav_name + std::string("/local_origin"));
-    param_loader.loadParam("gps_frame", gps_frame, uav_name + std::string("/gps_origin"));
+    param_loader.loadParam("gps_frame", gps_frame, uav_name + std::string("/world_origin"));
     param_loader.loadParam("output_framerate", output_framerate, double(DEFAULT_OUTPUT_FRAMERATE));
 
     param_loader.loadParam("kalman_pose_model", kalman_pose_model);
@@ -443,36 +449,10 @@ int main(int argc, char **argv)
     transformer->retryLookupNewest(true);
     transformer->setDefaultPrefix("");
 
-    if(not(use_uvdar or use_gps))
+    if (not(use_uvdar or use_gps))
     {
         ROS_ERROR("[OBJECT TRACKER]: At least one of the sensors must be enabled.");
         return -1;
-    }
-
-    bool is_origin_param_ok = true;
-    param_loader.loadParam("utm_origin_units", _utm_origin_units_);
-    if (_utm_origin_units_ == 0)
-    {
-        ROS_INFO("[Odometry]: Loading UTM origin in UTM units.");
-        is_origin_param_ok &= param_loader.loadParam("utm_origin_x", _utm_origin_x_);
-        is_origin_param_ok &= param_loader.loadParam("utm_origin_y", _utm_origin_y_);
-    }
-    else
-    {
-        double lat, lon;
-        ROS_INFO("[Odometry]: Loading UTM origin in LatLon units.");
-        is_origin_param_ok &= param_loader.loadParam("utm_origin_lat", lat);
-        is_origin_param_ok &= param_loader.loadParam("utm_origin_lon", lon);
-        mrs_lib::UTM(lat, lon, &_utm_origin_x_, &_utm_origin_y_);
-        ROS_INFO("[Odometry]: Converted to UTM x: %f, y: %f.", _utm_origin_x_, _utm_origin_y_);
-    }
-
-    if (!is_origin_param_ok)
-    {
-        ROS_ERROR("[OBJECT_TRACKER]: Could not load UTM origin.");
-
-        _utm_origin_x_ = nan("");
-        _utm_origin_y_ = nan("");
     }
 
     ros::Subscriber pose_sub, range_sub, rtk_gps_sub;
