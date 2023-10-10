@@ -39,7 +39,7 @@
 #include "helperfun.h"
 
 #define DEFAULT_OUTPUT_FRAMERATE 20.0
-#define MIN_MEASUREMENTS_TO_VALIDATION 1
+#define MIN_MEASUREMENTS_TO_VALIDATION 3
 #define POS_THRESH 2.0
 #define MAH_THRESH 2.0
 #define YAW_THRESH 1.5
@@ -285,6 +285,12 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
         if (tracker->get_pose_count() < MIN_MEASUREMENTS_TO_VALIDATION)
         {
             ROS_WARN("[OBJECT TRACKER] Not enough pose measurements for tracker 0x%lX", measurement.id);
+            continue;
+        }
+
+        if(isnan(measurement.range.range) or measurement.range.max_range < measurement.range.range or measurement.range.min_range > measurement.range.range)
+        {
+            ROS_ERROR("[OBJECT TRACKER] Invalid range measurement for tracker 0x%lX", measurement.id);
             continue;
         }
 

@@ -321,6 +321,9 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
             kalman::range_ukf_t::z_t z;
             z << pose.norm();
 
+            if(z[0] < 0 or isnan(z[0]))
+                ROS_ERROR("Range is negative or NaN");
+
             return z;
         };
         this->range_ukf.setObservationModel(observe_ukf_lambda);
