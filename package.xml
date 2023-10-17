@@ -14,6 +14,7 @@
   <depend>std_msgs</depend>
   <depend>mrs_lib</depend>
   <depend>sensor_msgs</depend>
+  <depend>uwb_range</depend>
 
   <depend>tf2_eigen</depend>
 

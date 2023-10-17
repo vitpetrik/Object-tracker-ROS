@@ -120,6 +120,9 @@ Tracker::Tracker(int position_model, int rotation_model, double spectral_density
 
     this->range_count = 0;
     this->pose_count = 0;
+    this->total_count = 0;
+
+    this->is_valid = false;
 
     this->history_map = history_map_t();
 
@@ -130,6 +133,12 @@ Tracker::Tracker(int position_model, int rotation_model, double spectral_density
 
 Tracker::~Tracker()
 {
+    return;
+}
+
+void Tracker::set_valid(bool valid)
+{
+    this->is_valid = valid;
     return;
 }
 
@@ -144,32 +153,20 @@ void Tracker::initializeFilters()
     H_matrix_pose(4, (int)STATE::PITCH) = 1;
     H_matrix_pose(5, (int)STATE::YAW) = 1;
 
-    kalman::pose2d_lkf_t::H_t H_matrix_pose2d = kalman::pose2d_lkf_t::H_t::Zero();
-
-    H_matrix_pose2d(0, (int)STATE::X) = 1;
-    H_matrix_pose2d(1, (int)STATE::Y) = 1;
-
-    kalman::pose3d_lkf_t::H_t H_matrix_pose3d = kalman::pose3d_lkf_t::H_t::Zero();
-
-    H_matrix_pose3d(0, (int)STATE::X) = 1;
-    H_matrix_pose3d(1, (int)STATE::Y) = 1;
-    H_matrix_pose3d(2, (int)STATE::Z) = 1;
-
     this->pose_lkf = kalman::pose_lkf_t(kalman::pose_lkf_t::A_t::Identity(),
                                         kalman::pose_lkf_t::B_t::Zero(),
                                         H_matrix_pose);
-    this->pose2d_lkf = kalman::pose2d_lkf_t(kalman::pose2d_lkf_t::A_t::Identity(),
-                                            kalman::pose2d_lkf_t::B_t::Zero(),
-                                            H_matrix_pose2d);
-    this->pose3d_lkf = kalman::pose3d_lkf_t(kalman::pose3d_lkf_t::A_t::Identity(),
-                                            kalman::pose3d_lkf_t::B_t::Zero(),
-                                            H_matrix_pose3d);
+
+    this->beacon_ukf = kalman::beacon_ukf_t();
+    this->beacon_ukf.setConstants(1e-3, 1, 2);
+
+    this->range_ukf = kalman::range_ukf_t();
+    this->range_ukf.setConstants(1e-3, 1, 2);
+
+
     this->predict_lkf = kalman::predict_lkf_t(kalman::predict_lkf_t::A_t::Identity(),
                                               kalman::predict_lkf_t::B_t::Zero(),
                                               kalman::predict_lkf_t::H_t::Identity());
-    this->range_ukf = kalman::range_ukf_t();
-
-    this->range_ukf.setConstants(1e-3, 1, 2);
 
     return;
 }
@@ -220,11 +217,7 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     }
     else if (dt.toSec() < 0)
     {
-        ROS_WARN("Time difference between measurements is Negative!");
-    }
-    else
-    {
-        ROS_WARN("Time difference between measurements is Zero!");
+        ROS_ERROR("Time difference between measurements is Negative!");
     }
 
     if (history.measurement.index() == 0)
@@ -259,19 +252,45 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     }
     else if (history.measurement.index() == 1)
     {
-        kalman::pose2d_lkf_t::z_t z = std::get<1>(history.measurement).z;
-        kalman::pose2d_lkf_t::R_t R = std::get<1>(history.measurement).R;
+        kalman::beacon_ukf_t::z_t z = std::get<1>(history.measurement).z;
+        kalman::beacon_ukf_t::R_t R = std::get<1>(history.measurement).R;
 
-        kalman::pose2d_lkf_t::statecov_t statecov = {x, P, apriori->first};
+        auto observe_ukf_lambda = [&z](const kalman::beacon_ukf_t::x_t &x) -> kalman::beacon_ukf_t::z_t
+        {
+            Eigen::Quaterniond quat;
+            quat = Eigen::AngleAxisd(x[(int)STATE::YAW], Eigen::Vector3d::UnitZ()) *
+                        Eigen::AngleAxisd(x[(int)STATE::PITCH], Eigen::Vector3d::UnitY()) *
+                        Eigen::AngleAxisd(x[(int)STATE::ROLL], Eigen::Vector3d::UnitX());
+
+            Eigen::Vector3d temp = Eigen::Vector3d(1, 0, 0);
+
+            temp = quat * temp;
+            double heading = atan2(temp(1), temp(0));
+            double angle_diff = fmod(heading - z[3] + M_PI, 2 * M_PI) - M_PI;
+            heading = z[3] + angle_diff;
+            
+            kalman::beacon_ukf_t::z_t z_new = kalman::beacon_ukf_t::z_t::Zero();
+            z_new << x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z], heading;
+
+            return z_new;
+        };
+
+        this->beacon_ukf.setObservationModel(observe_ukf_lambda);
+
+        kalman::beacon_ukf_t::statecov_t statecov = {x, P, apriori->first};
 
         try
         {
-            statecov = this->pose2d_lkf.correct(statecov, z, R);
+            statecov = this->beacon_ukf.correct(statecov, z, R);
         }
         catch ([[maybe_unused]] std::exception &e)
         {
             ROS_WARN("Could retrieve matrix inversion");
         }
+
+        x((int)STATE::ROLL) = fixAngle(x((int)STATE::ROLL), 0);
+        x((int)STATE::PITCH) = fixAngle(x((int)STATE::PITCH), 0);
+        x((int)STATE::YAW) = fixAngle(x((int)STATE::YAW), 0);
 
         x = statecov.x;
         P = statecov.P;
@@ -281,37 +300,15 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     }
     else if (history.measurement.index() == 2)
     {
-        kalman::pose3d_lkf_t::z_t z = std::get<2>(history.measurement).z;
-        kalman::pose3d_lkf_t::R_t R = std::get<2>(history.measurement).R;
-
-        kalman::pose3d_lkf_t::statecov_t statecov = {x, P, apriori->first};
-
-        try
-        {
-            statecov = this->pose3d_lkf.correct(statecov, z, R);
-        }
-        catch ([[maybe_unused]] std::exception &e)
-        {
-            ROS_WARN("Could retrieve matrix inversion");
-        }
-
-        x = statecov.x;
-        P = statecov.P;
-
-        history.x = x;
-        history.P = P;
-    }
-    else if (history.measurement.index() == 3)
-    {
-        kalman::range_ukf_t::z_t z = std::get<3>(history.measurement).z;
-        kalman::range_ukf_t::R_t R = std::get<3>(history.measurement).R;
-        geometry_msgs::TransformStamped transformation = std::get<3>(history.measurement).transformation;
+        kalman::range_ukf_t::z_t z = std::get<2>(history.measurement).z;
+        kalman::range_ukf_t::R_t R = std::get<2>(history.measurement).R;
+        geometry_msgs::TransformStamped transformation = std::get<2>(history.measurement).transformation;
 
         Eigen::Vector3d translate = Eigen::Vector3d(transformation.transform.translation.x,
                                                     transformation.transform.translation.y,
                                                     transformation.transform.translation.z);
 
-        auto observe_ukf_lambda = [&](const kalman::range_ukf_t::x_t &x) -> kalman::range_ukf_t::z_t
+        auto observe_ukf_lambda = [&translate](const kalman::range_ukf_t::x_t &x) -> kalman::range_ukf_t::z_t
         {
             Eigen::VectorXd pose(3);
 
@@ -321,7 +318,7 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
             kalman::range_ukf_t::z_t z;
             z << pose.norm();
 
-            if(z[0] < 0 or isnan(z[0]))
+            if (z[0] < 0 or isnan(z[0]))
                 ROS_ERROR("Range is negative or NaN");
 
             return z;
@@ -336,6 +333,9 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
         }
         catch ([[maybe_unused]] std::exception &e)
         {
+            const Eigen::SelfAdjointEigenSolver<kalman::P_t> solver(0.5 * (statecov.P + statecov.P.transpose()));
+            statecov.P = solver.eigenvectors() * solver.eigenvalues().cwiseMax(0).asDiagonal() * solver.eigenvectors().transpose();
+            statecov = this->range_ukf.correct(statecov, z, R);
             ROS_WARN("Could retrieve matrix inversion");
         }
 
@@ -378,6 +378,13 @@ std::optional<Tracker::history_map_t::iterator> Tracker::addMeasurement(ros::Tim
 
     apriori = std::prev(bound);
     auto it = this->history_map.insert(std::make_pair(time, history));
+
+    this->total_count++;
+
+    int distance = std::distance(it, this->history_map.end());
+
+    if (distance > 5)
+        ROS_INFO("Adding measurement to %d place", distance);
 
     this->runCorrectionFrom(apriori);
 
@@ -422,33 +429,9 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalm
     return this->get_state();
 }
 
-std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalman::pose2d_lkf_t::z_t z, kalman::pose2d_lkf_t::R_t R)
+std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalman::beacon_ukf_t::z_t z, kalman::beacon_ukf_t::R_t R)
 {
-    measurement_t measurement = {pose2d_measurement_t{z, R}};
-
-    kalman::x_t x = kalman::x_t::Zero();
-    kalman::P_t P = 1000 * kalman::P_t::Identity();
-
-    x[(int)STATE::X] = z[0];
-    x[(int)STATE::Y] = z[1];
-
-    P((int)STATE::X, (int)STATE::X) = R(0, 0);
-    P((int)STATE::X, (int)STATE::Y) = R(0, 1);
-    P((int)STATE::Y, (int)STATE::Y) = R(1, 1);
-
-    P.triangularView<Eigen::Lower>() = P.transpose();
-
-    auto it = this->addMeasurement(time, measurement, x, P);
-
-    if (it)
-        this->pose_count++;
-
-    return this->get_state();
-}
-
-std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalman::pose3d_lkf_t::z_t z, kalman::pose3d_lkf_t::R_t R)
-{
-    measurement_t measurement = {pose3d_measurement_t{z, R}};
+    measurement_t measurement = {beacon_measurement_t{z, R}};
 
     kalman::x_t x = kalman::x_t::Zero();
     kalman::P_t P = 1000 * kalman::P_t::Identity();
@@ -456,13 +439,18 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalm
     x[(int)STATE::X] = z[0];
     x[(int)STATE::Y] = z[1];
     x[(int)STATE::Z] = z[2];
+    x[(int)STATE::YAW] = z[3];
 
     P((int)STATE::X, (int)STATE::X) = R(0, 0);
     P((int)STATE::X, (int)STATE::Y) = R(0, 1);
     P((int)STATE::X, (int)STATE::Z) = R(0, 2);
+    P((int)STATE::X, (int)STATE::YAW) = R(0, 3);
     P((int)STATE::Y, (int)STATE::Y) = R(1, 1);
     P((int)STATE::Y, (int)STATE::Z) = R(1, 2);
+    P((int)STATE::Y, (int)STATE::YAW) = R(1, 3);
     P((int)STATE::Z, (int)STATE::Z) = R(2, 2);
+    P((int)STATE::Z, (int)STATE::YAW) = R(2, 3);
+    P((int)STATE::YAW, (int)STATE::YAW) = R(3, 3);
 
     P.triangularView<Eigen::Lower>() = P.transpose();
 
@@ -580,6 +568,7 @@ int Tracker::delete_old(ros::Time deadline)
             this->pose_count--;
         else if (it->second.measurement.index() == 1)
             this->range_count--;
+
         this->history_map.erase(it++); // or "it = m.erase(it)" since C++11
         ++count;
     }

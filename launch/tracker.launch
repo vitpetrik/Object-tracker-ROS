@@ -23,7 +23,7 @@
 
   <arg name="use_uvdar"         default="true"/>
   <arg name="use_uwb"           default="true"/>
-  <arg name="use_gps"           default="true"/>
+  <arg name="use_beacon"           default="true"/>
 
   <arg name="time_to_live"      default="5" />
 
@@ -53,11 +53,14 @@
 
         <param name="use_uvdar" value="$(arg use_uvdar)" />
         <param name="use_uwb"   value="$(arg use_uwb)" />
-        <param name="use_gps"   value="$(arg use_gps)" />
+        <param name="use_beacon"   value="$(arg use_beacon)" />
 
-        <remap from="~uvdar" to="~uvdar"/>
-        <remap from="~uwb" to="uwb_range/range"/>
-        <remap from="~gps" to="uwb_range/gps_throttle" />
+        <remap from="~uvdar_in" to="~uvdar"/>
+        <remap from="~beacon_in" to="uwb_range/beacon" />
+        <remap from="~uwb_in" to="uwb_range/range"/>
+
+        <remap from="~pose_debug" to="~pose_debug"/>
+
         <remap from="~filtered_poses" to="~filtered_poses"/>
         <remap from="~uav_status" to="mrs_uav_status/display_string" />
     </node>

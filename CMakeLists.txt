@@ -16,6 +16,7 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -std=c++17
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
   mrs_msgs
+  uwb_range
   roscpp
   std_msgs
   mrs_lib

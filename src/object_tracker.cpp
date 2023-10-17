@@ -17,6 +17,8 @@
 #include <ros/ros.h>
 #include <ros/package.h>
 
+#include <tf2/convert.h>
+
 #include <unordered_map>
 #include <sstream>
 #include <stdint.h>
@@ -29,6 +31,8 @@
 #include <mrs_msgs/NavSatFixIdentified.h>
 #include <sensor_msgs/NavSatFix.h>
 
+#include <uwb_range/BeaconStamped.h>
+#include <uwb_range/Beacon.h>
 #include <std_msgs/String.h>
 
 #include <mrs_lib/gps_conversions.h>
@@ -39,7 +43,7 @@
 #include "helperfun.h"
 
 #define DEFAULT_OUTPUT_FRAMERATE 20.0
-#define MIN_MEASUREMENTS_TO_VALIDATION 3
+#define MIN_MEASUREMENTS_TO_VALIDATION 5
 #define POS_THRESH 2.0
 #define MAH_THRESH 2.0
 #define YAW_THRESH 1.5
@@ -49,6 +53,7 @@
 std::unordered_map<uint64_t, std::shared_ptr<Tracker>> tracker_map;
 std::shared_ptr<mrs_lib::Transformer> transformer;
 
+ros::Publisher pose_debug;
 ros::Publisher publish_pose;
 ros::Publisher uav_status;
 std::string kalman_frame;
@@ -60,7 +65,7 @@ double spectral_density_pose;
 double spectral_density_rotation;
 double time_to_live;
 
-bool use_uvdar, use_uwb, use_gps;
+bool use_uvdar, use_uwb, use_beacon;
 
 void publishStates()
 {
@@ -81,7 +86,7 @@ void publishStates()
         auto id = element.first;
         auto tracker = element.second;
 
-        if (tracker->get_update_count() < MIN_MEASUREMENTS_TO_VALIDATION)
+        if (not tracker->get_is_valid() and tracker->get_total_count() < MIN_MEASUREMENTS_TO_VALIDATION)
             continue;
 
         std::pair<kalman::x_t, kalman::P_t> result = tracker->predict(msg.header.stamp);
@@ -151,7 +156,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
     {
         ROS_WARN("[OBJECT TRACKER] Range message is %.3f sec old", age.toSec());
         std_msgs::String msg_status;
-        msg_status.data = std::string("-id error_msg -R [OT] got old RANGE").c_str();
+        msg_status.data = std::string("-id error_msg -R [OT] got old UVDAR").c_str();
         uav_status.publish(msg_status);
         return;
     }
@@ -200,7 +205,7 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
         // create new Tracker instace if not available yet
         if (not tracker_map.count(measurement.id))
         {
-            ROS_INFO_THROTTLE(1.0, "[OBJECT TRACKER] Creating new tracker for object ID: 0x%lX", measurement.id);
+            ROS_INFO("[OBJECT TRACKER] Creating new tracker for object ID: 0x%lX", measurement.id);
             tracker_map[measurement.id] = std::make_shared<Tracker>(kalman_pose_model,
                                                                     kalman_rotation_model,
                                                                     spectral_density_pose,
@@ -224,6 +229,130 @@ void pose_callback(const mrs_msgs::PoseWithCovarianceArrayStamped &msg)
 
         tracker->addMeasurement(stamp, z, R);
     }
+    return;
+}
+
+void beacon_callback(const uwb_range::BeaconStampedConstPtr &msg)
+{
+    if (use_beacon == false)
+        return;
+
+    ros::Time stamp = msg->header.stamp;
+    ros::Duration age = ros::Time::now() - stamp;
+
+    if (age.toSec() > time_to_live)
+    {
+        ROS_WARN("[OBJECT TRACKER] Beacon message is %.3f sec old", age.toSec());
+        std_msgs::String msg_status;
+        msg_status.data = std::string("-id error_msg -R [OT] got old BEACON message").c_str();
+        uav_status.publish(msg_status);
+        return;
+    }
+
+    std::optional<geometry_msgs::TransformStamped> transformation;
+
+    transformation = transformer->getTransform(msg->header.frame_id, kalman_frame, stamp);
+
+    if (not transformation)
+    {
+        ROS_WARN("[OBJECT TRACKER] Not found any transformation from GPS to kalman frame");
+        return;
+    }
+
+    ROS_INFO_THROTTLE(1.0, "[OBJECT TRACKER] Beacon message ID 0x%X", msg->beacon.id);
+
+    // create new Tracker instace if not available yet
+    if (not tracker_map.count(msg->beacon.id))
+    {
+        ROS_INFO("[OBJECT TRACKER] Creating new tracker for object ID: 0x%X", msg->beacon.id);
+        tracker_map[msg->beacon.id] = std::make_shared<Tracker>(kalman_pose_model,
+                                                                kalman_rotation_model,
+                                                                spectral_density_pose,
+                                                                spectral_density_rotation,
+                                                                transformer);
+
+        std::stringstream ss;
+        std_msgs::String msg_status;
+
+        ss << "-id create_msg -g [OT] Creating tracker "
+           << "0x" << std::setfill('0') << std::setw(2) << std::right << std::hex << msg->beacon.id;
+        auto x = ss.str();
+        msg_status.data = x.c_str();
+        uav_status.publish(msg_status);
+    }
+
+    kalman::beacon_ukf_t::z_t z = kalman::beacon_ukf_t::z_t::Zero();
+    kalman::beacon_ukf_t::R_t R = 1000 * kalman::beacon_ukf_t::R_t::Identity();
+
+    if (std::isfinite(msg->beacon.LAT) and std::isfinite(msg->beacon.LON))
+    {
+        geometry_msgs::PointStamped point;
+        point.point.z = msg->beacon.ALT;
+
+        mrs_lib::UTM(msg->beacon.LAT, msg->beacon.LON, &point.point.x, &point.point.y);
+
+        std::optional<geometry_msgs::PointStamped> point_transformed = transformer->transform(point, transformation.value());
+        if (point_transformed)
+        {
+            point = point_transformed.value();
+
+            z(0) = point.point.x;
+            z(1) = point.point.y;
+
+            R(0, 0) = 1;
+            R(1, 1) = 1;
+        }
+        else
+        {
+            ROS_WARN("[OBJECT TRACKER] Could not transform GPS measurement to kalman frame");
+        }
+    }
+    else
+    {
+        ROS_ERROR_THROTTLE(1.0, "[OBJECT TRACKER] NaN detected in GPS coord!!!");
+    }
+
+    if (std::isfinite(msg->beacon.ALT))
+    {
+        z(2) = msg->beacon.ALT;
+        R(2, 2) = 1;
+    }
+
+    if (std::isfinite(msg->beacon.heading))
+    {
+        geometry_msgs::TransformStamped transform = transformation.value();
+        
+        z(3) = msg->beacon.heading + tf::getYaw(transform.transform.rotation);
+        z(3) = fmod(z(3) + M_PI, 2 * M_PI) - M_PI;
+        R(3, 3) = 0.1;
+    }
+
+    geometry_msgs::PoseStamped pose;
+
+    pose.pose.position.x = z(0);
+    pose.pose.position.y = z(1);
+    pose.pose.position.z = z(2);
+
+    Eigen::Quaterniond quat;
+    quat = Eigen::AngleAxisd(z(3), Eigen::Vector3d::UnitZ()) *
+           Eigen::AngleAxisd(0, Eigen::Vector3d::UnitY()) *
+           Eigen::AngleAxisd(0, Eigen::Vector3d::UnitX());
+
+    pose.pose.orientation.w = quat.w();
+    pose.pose.orientation.x = quat.x();
+    pose.pose.orientation.y = quat.y();
+    pose.pose.orientation.z = quat.z();
+
+    pose.header.frame_id = kalman_frame;
+    pose.header.stamp = stamp;
+
+    pose_debug.publish(pose);
+
+    auto tracker = tracker_map[msg->beacon.id];
+    tracker->set_valid();
+
+    tracker->addMeasurement(stamp, z, R);
+
     return;
 }
 
@@ -288,136 +417,18 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
             continue;
         }
 
-        if(isnan(measurement.range.range) or measurement.range.max_range < measurement.range.range or measurement.range.min_range > measurement.range.range)
+        if (isnan(measurement.range.range) or measurement.range.max_range < measurement.range.range or measurement.range.min_range > measurement.range.range)
         {
             ROS_ERROR("[OBJECT TRACKER] Invalid range measurement for tracker 0x%lX", measurement.id);
             continue;
         }
 
+        tracker->set_valid();
+
         kalman::range_ukf_t::z_t z(measurement.range.range);
         kalman::range_ukf_t::R_t R(measurement.variance);
 
         tracker->addMeasurement(stamp, z, R, transformation.value());
-    }
-
-    return;
-}
-
-void gps_cb(const mrs_msgs::NavSatFixArrayStamped &msg)
-{
-    if (use_gps == false or msg.nav_sat_fixes.size() == 0)
-        return;
-
-    ros::Time stamp = msg.header.stamp;
-    ros::Duration age = ros::Time::now() - stamp;
-
-    if (age.toSec() > time_to_live)
-    {
-        ROS_WARN("[OBJECT TRACKER] GPS message is %.3f sec old", age.toSec());
-        std_msgs::String msg_status;
-        msg_status.data = std::string("-id error_msg -R [OT] got old RANGE").c_str();
-        uav_status.publish(msg_status);
-        return;
-    }
-
-    std::optional<geometry_msgs::TransformStamped> transformation;
-
-    transformation = transformer->getTransform(gps_frame, kalman_frame, stamp);
-
-    if (not transformation)
-    {
-        ROS_WARN("[OBJECT TRACKER] Not found any transformation from GPS to kalman frame");
-        return;
-    }
-
-    for (auto const &measurement : msg.nav_sat_fixes)
-    {
-        if (!std::isfinite(measurement.gps.latitude))
-        {
-            ROS_ERROR_THROTTLE(1.0, "[OBJECT TRACKER] NaN detected in RTK variable \"msg->latitude\"!!!");
-            return;
-        }
-
-        if (!std::isfinite(measurement.gps.longitude))
-        {
-            ROS_ERROR_THROTTLE(1.0, "[OBJECT TRACKER] NaN detected in RTK variable \"msg->longitude\"!!!");
-            return;
-        }
-
-        ROS_INFO_THROTTLE(1.0, "[OBJECT TRACKER] GPS measurement for ID 0x%lX", measurement.id);
-
-        // create new Tracker instace if not available yet
-        if (not tracker_map.count(measurement.id))
-        {
-            ROS_INFO_THROTTLE(1.0, "[OBJECT TRACKER] Creating new tracker for object ID: 0x%lX", measurement.id);
-            tracker_map[measurement.id] = std::make_shared<Tracker>(kalman_pose_model,
-                                                                    kalman_rotation_model,
-                                                                    spectral_density_pose,
-                                                                    spectral_density_rotation,
-                                                                    transformer);
-
-            std::stringstream ss;
-            std_msgs::String msg_status;
-
-            ss << "-id create_msg -g [OT] Creating tracker "
-               << "0x" << std::setfill('0') << std::setw(2) << std::right << std::hex << measurement.id;
-            auto x = ss.str();
-            msg_status.data = x.c_str();
-            uav_status.publish(msg_status);
-        }
-
-        auto tracker = tracker_map[measurement.id];
-
-        // convert it to UTM
-
-        geometry_msgs::PointStamped point;
-        point.point.z = 0;
-        mrs_lib::UTM(measurement.gps.latitude, measurement.gps.longitude, &point.point.x, &point.point.y);
-
-        std::optional<geometry_msgs::PointStamped> point_transformed = transformer->transform(point, transformation.value());
-        if (point_transformed)
-        {
-            point = point_transformed.value();
-        }
-        else
-        {
-            ROS_WARN("[OBJECT TRACKER] Could not transform GPS measurement to kalman frame");
-            continue;
-        }
-
-        if (not isnan(measurement.gps.altitude))
-        {
-            kalman::pose3d_lkf_t::z_t z = kalman::pose3d_lkf_t::z_t(point.point.x, point.point.y, measurement.gps.altitude);
-
-            ROS_INFO_THROTTLE(1.0, "[OBJECT TRACKER] GPS measurement for ID 0x%lX: x: %.2f, y: %.2f, z: %.2f", measurement.id, z(0), z(1), z(2));
-
-            kalman::pose3d_lkf_t::R_t R = kalman::pose3d_lkf_t::R_t::Zero();
-
-            R(0, 0) = measurement.gps.position_covariance[0];
-            R(0, 1) = measurement.gps.position_covariance[1];
-            R(0, 2) = measurement.gps.position_covariance[2];
-            R(1, 1) = measurement.gps.position_covariance[4];
-            R(1, 2) = measurement.gps.position_covariance[5];
-            R(2, 2) = measurement.gps.position_covariance[8];
-
-            R.triangularView<Eigen::Lower>() = R.transpose();
-            tracker->addMeasurement(stamp, z, R);
-        }
-        else
-        {
-            kalman::pose2d_lkf_t::z_t z = kalman::pose2d_lkf_t::z_t(point.point.x, point.point.y);
-
-            ROS_INFO_THROTTLE(1.0, "[OBJECT TRACKER] GPS measurement for ID 0x%lX: x: %.2f, y: %.2f", measurement.id, z(0), z(1));
-
-            kalman::pose2d_lkf_t::R_t R = kalman::pose2d_lkf_t::R_t::Zero();
-
-            R(0, 0) = measurement.gps.position_covariance[0];
-            R(0, 1) = measurement.gps.position_covariance[1];
-            R(1, 0) = measurement.gps.position_covariance[3];
-            R(1, 1) = measurement.gps.position_covariance[4];
-
-            tracker->addMeasurement(stamp, z, R);
-        }
     }
 
     return;
@@ -447,25 +458,27 @@ int main(int argc, char **argv)
     param_loader.loadParam("time_to_live", time_to_live);
 
     param_loader.loadParam("use_uvdar", use_uvdar, true);
+    param_loader.loadParam("use_beacon", use_beacon, true);
     param_loader.loadParam("use_uwb", use_uwb, true);
-    param_loader.loadParam("use_gps", use_gps, true);
 
     transformer = std::make_shared<mrs_lib::Transformer>("OBJECT TRACKER", ros::Duration(time_to_live));
 
     transformer->retryLookupNewest(true);
     transformer->setDefaultPrefix("");
 
-    if (not(use_uvdar or use_gps))
+    if (not(use_uvdar or use_beacon))
     {
         ROS_ERROR("[OBJECT TRACKER]: At least one of the sensors must be enabled.");
         return -1;
     }
 
-    ros::Subscriber pose_sub, range_sub, rtk_gps_sub;
-    pose_sub = nh.subscribe("uvdar", 10, pose_callback);
-    range_sub = nh.subscribe("uwb", 10, range_callback);
-    rtk_gps_sub = nh.subscribe("gps", 10, gps_cb);
+    ros::Subscriber pose_sub, beacon_sub, range_sub;
 
+    pose_sub = nh.subscribe("uvdar_in", 10, pose_callback);
+    beacon_sub = nh.subscribe("beacon_in", 10, beacon_callback);
+    range_sub = nh.subscribe("uwb_in", 10, range_callback);
+
+    pose_debug = nh.advertise<geometry_msgs::PoseStamped>("pose_debug", 10);
     publish_pose = nh.advertise<mrs_msgs::PoseWithCovarianceArrayStamped>("filtered_poses", 10);
     uav_status = nh.advertise<std_msgs::String>("uav_status", 1);
 

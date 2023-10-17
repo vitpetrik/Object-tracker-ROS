@@ -36,9 +36,8 @@
 namespace kalman
 {
     using pose_lkf_t = mrs_lib::LKF<(int)STATE::STATES_NUM, 0, 6>;
+    using beacon_ukf_t = mrs_lib::UKF<(int)STATE::STATES_NUM, 0, 4>;
     using range_ukf_t = mrs_lib::UKF<(int)STATE::STATES_NUM, 0, 1>;
-    using pose2d_lkf_t = mrs_lib::LKF<(int)STATE::STATES_NUM, 0, 2>;
-    using pose3d_lkf_t = mrs_lib::LKF<(int)STATE::STATES_NUM, 0, 3>;
     using predict_lkf_t = mrs_lib::LKF<(int)STATE::STATES_NUM, 0, 6>;
 
     using A_t = predict_lkf_t::A_t;
@@ -59,16 +58,10 @@ private:
         kalman::pose_lkf_t::R_t R;
     };
 
-    struct pose2d_measurement_t
+    struct beacon_measurement_t
     {
-        kalman::pose2d_lkf_t::z_t z;
-        kalman::pose2d_lkf_t::R_t R;
-    };
-
-    struct pose3d_measurement_t
-    {
-        kalman::pose3d_lkf_t::z_t z;
-        kalman::pose3d_lkf_t::R_t R;
+        kalman::beacon_ukf_t::z_t z;
+        kalman::beacon_ukf_t::R_t R;
     };
 
     struct range_measurement_t
@@ -79,7 +72,7 @@ private:
         geometry_msgs::TransformStamped transformation;
     };
 
-    typedef std::variant<pose_measurement_t, pose2d_measurement_t, pose3d_measurement_t, range_measurement_t> measurement_t;
+    typedef std::variant<pose_measurement_t, beacon_measurement_t, range_measurement_t> measurement_t;
 
     struct history_t
     {
@@ -99,14 +92,17 @@ private:
     int range_count;
     int pose_count;
 
+    int total_count;
+    bool is_valid;
+
     double spectral_density_pose;
     double spectral_density_rotation;
 
-    kalman::predict_lkf_t predict_lkf;
     kalman::pose_lkf_t pose_lkf;
+    kalman::beacon_ukf_t beacon_ukf;
     kalman::range_ukf_t range_ukf;
-    kalman::pose2d_lkf_t pose2d_lkf;
-    kalman::pose3d_lkf_t pose3d_lkf;
+    kalman::predict_lkf_t predict_lkf;
+
 
     std::shared_ptr<mrs_lib::Transformer> transformer;
 
@@ -126,15 +122,15 @@ public:
 
     ~Tracker();
 
+    void set_valid(bool valid = true);
+
     std::pair<kalman::x_t, kalman::P_t> predict(ros::Time);
 
     std::pair<kalman::x_t, kalman::P_t> addMeasurement(ros::Time, kalman::pose_lkf_t::z_t, kalman::pose_lkf_t::R_t);
 
+    std::pair<kalman::x_t, kalman::P_t> addMeasurement(ros::Time, kalman::beacon_ukf_t::z_t, kalman::beacon_ukf_t::R_t);
+
     std::pair<kalman::x_t, kalman::P_t> addMeasurement(ros::Time, kalman::range_ukf_t::z_t, kalman::range_ukf_t::R_t, geometry_msgs::TransformStamped transformation);
-
-    std::pair<kalman::x_t, kalman::P_t> addMeasurement(ros::Time, kalman::pose2d_lkf_t::z_t, kalman::pose2d_lkf_t::R_t);
-
-    std::pair<kalman::x_t, kalman::P_t> addMeasurement(ros::Time, kalman::pose3d_lkf_t::z_t, kalman::pose3d_lkf_t::R_t);
 
     const auto get_last_correction() const { return std::prev(history_map.end())->first; }
 
@@ -143,6 +139,10 @@ public:
     const auto get_pose_count() const { return pose_count; }
     
     const auto get_range_count() const { return range_count; }
+
+    const auto get_total_count() const { return total_count; }
+
+    const auto get_is_valid() const { return is_valid; }
 
     std::pair<kalman::x_t, kalman::P_t> transform(geometry_msgs::TransformStamped, kalman::x_t, kalman::P_t);
 
