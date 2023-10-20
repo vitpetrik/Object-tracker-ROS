@@ -14,6 +14,7 @@
 #endif
 
 #include <ros/ros.h>
+#include <stdexcept>
 
 #include <math.h>
 #include "tracker.h"
@@ -313,7 +314,7 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     }
     else if (history.measurement.index() == 2)
     {
-        if (P_determinant < 1e-1)
+        if (P_determinant < 1)
         {
             kalman::range_ukf_t::z_t z = std::get<2>(history.measurement).z;
             kalman::range_ukf_t::R_t R = std::get<2>(history.measurement).R;
@@ -333,8 +334,11 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
                 kalman::range_ukf_t::z_t z;
                 z << pose.norm();
 
-                if (z[0] < 0 or isnan(z[0]))
-                    ROS_ERROR("Range is negative or NaN");
+                if (z[0] < 1 or isnan(z[0]))
+                {
+                    ROS_ERROR("Range is NaN or too small to be safe");
+                    throw std::runtime_error("Range is NaN or too small to be safe");
+                }
 
                 return z;
             };
@@ -351,32 +355,22 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
                 x = statecov.x;
                 P = statecov.P;
 
-                Eigen::VectorXd x_diff(3);
+                Eigen::Vector3d prev_pos = Eigen::Vector3d(x_prev[(int)STATE::X], x_prev[(int)STATE::Y], x_prev[(int)STATE::Z]);
+                Eigen::Vector3d new_pos = Eigen::Vector3d(x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z]);
 
-                x_diff << x[(int)STATE::X] - x_prev[(int)STATE::X],
-                    x[(int)STATE::Y] - x_prev[(int)STATE::Y],
-                    x[(int)STATE::Z] - x_prev[(int)STATE::Z];
-
-                if (x_diff.norm() > z(0))
-                {
-                    ROS_ERROR("Mean distance is not between new a prev position!!");
-                }
-                else
-                {
-                    success = true;
-                }
+                success = true;
             }
             catch ([[maybe_unused]] std::exception &e)
             {
                 // const Eigen::SelfAdjointEigenSolver<kalman::P_t> solver(0.5 * (statecov.P + statecov.P.transpose()));
                 // statecov.P = solver.eigenvectors() * solver.eigenvalues().cwiseMax(0).asDiagonal() * solver.eigenvectors().transpose();
                 // statecov = this->range_ukf.correct(statecov, z, R);
-                ROS_WARN("Could retrieve matrix inversion");
+                ROS_WARN("Error in fusion of range measurement");
             }
         }
         else
         {
-            ROS_ERROR("Covariance matrix is too large to safely fuse the data");
+            ROS_ERROR("P matrix determinant %.2f is too large", P_determinant);
         }
     }
     else

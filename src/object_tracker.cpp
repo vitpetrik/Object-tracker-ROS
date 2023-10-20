@@ -316,7 +316,7 @@ void beacon_callback(const uwb_range::BeaconStampedConstPtr &msg)
     if (std::isfinite(msg->beacon.ALT))
     {
         z(2) = msg->beacon.ALT;
-        R(2, 2) = 1;
+        R(2, 2) = 2;
     }
 
     if (std::isfinite(msg->beacon.heading))
@@ -412,11 +412,6 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
 
         auto tracker = tracker_map[measurement.id];
 
-        if (tracker->get_pose_count() < 2)
-        {
-            ROS_WARN("[OBJECT TRACKER] Not enough pose measurements for tracker 0x%lX", measurement.id);
-            continue;
-        }
 
         if (isnan(measurement.range.range) or measurement.range.max_range < measurement.range.range or measurement.range.min_range > measurement.range.range)
         {
