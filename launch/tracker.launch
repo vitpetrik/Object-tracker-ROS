@@ -55,7 +55,8 @@
         <param name="use_uwb"   value="$(arg use_uwb)" />
         <param name="use_beacon"   value="$(arg use_beacon)" />
 
-        <remap from="~uvdar_in" to="~uvdar"/>
+        <!-- <remap from="~uvdar_in" to="~uvdar"/> -->
+        <remap from="~uvdar_in" to="uvdar/measuredPoses"/>
         <remap from="~beacon_in" to="uwb_range/beacon" />
         <remap from="~uwb_in" to="uwb_range/range"/>
 
@@ -65,9 +66,9 @@
         <remap from="~uav_status" to="mrs_uav_status/display_string" />
     </node>
 
-    <node name="$(arg node_name)_relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL $(arg node_name)/uvdar"/>
+    <!-- <node name="$(arg node_name)_relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL $(arg node_name)/uvdar"/>
     <node name="$(arg node_name)_relay_2" pkg="topic_tools" type="relay" args="uvdar/measuredPosesR $(arg node_name)/uvdar"/>
-    <node name="$(arg node_name)_relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB $(arg node_name)/uvdar"/>
+    <node name="$(arg node_name)_relay_3" pkg="topic_tools" type="relay" args="uvdar/measuredPosesB $(arg node_name)/uvdar"/> -->
   </group>
 
 </launch>

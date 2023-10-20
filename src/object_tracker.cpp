@@ -411,7 +411,7 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
 
         auto tracker = tracker_map[measurement.id];
 
-        if (tracker->get_pose_count() < MIN_MEASUREMENTS_TO_VALIDATION)
+        if (tracker->get_pose_count() < 2)
         {
             ROS_WARN("[OBJECT TRACKER] Not enough pose measurements for tracker 0x%lX", measurement.id);
             continue;

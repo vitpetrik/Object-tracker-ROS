@@ -163,7 +163,6 @@ void Tracker::initializeFilters()
     this->range_ukf = kalman::range_ukf_t();
     this->range_ukf.setConstants(1e-3, 1, 2);
 
-
     this->predict_lkf = kalman::predict_lkf_t(kalman::predict_lkf_t::A_t::Identity(),
                                               kalman::predict_lkf_t::B_t::Zero(),
                                               kalman::predict_lkf_t::H_t::Identity());
@@ -197,8 +196,22 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     if (std::next(apriori) == this->history_map.end())
         return;
 
+    bool success = false;
+
     auto x = apriori->second.x;
     auto P = apriori->second.P;
+
+    Eigen::MatrixXd P_reduced = Eigen::MatrixXd::Zero(3, 3);
+
+    P_reduced(0, 0) = P((int)STATE::X, (int)STATE::X);
+    P_reduced(0, 1) = P((int)STATE::X, (int)STATE::Y);
+    P_reduced(0, 2) = P((int)STATE::X, (int)STATE::Z);
+    P_reduced(1, 1) = P((int)STATE::Y, (int)STATE::Y);
+    P_reduced(1, 2) = P((int)STATE::Y, (int)STATE::Z);
+    P_reduced(2, 2) = P((int)STATE::Z, (int)STATE::Z);
+
+    P_reduced.triangularView<Eigen::Lower>() = P_reduced.transpose();
+    double P_determinant = P_reduced.determinant();
 
     history_map_t::iterator posteriori = std::next(apriori);
     history_t &history = posteriori->second;
@@ -229,26 +242,27 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
         x[(int)STATE::PITCH] = fixAngle(x[(int)STATE::PITCH], z[4]);
         x[(int)STATE::YAW] = fixAngle(x[(int)STATE::YAW], z[5]);
 
-        kalman::pose_lkf_t::statecov_t statecov = {x, P, apriori->first};
-
         try
         {
+            auto x_prev = x;
+            auto P_prev = P;
+            kalman::pose_lkf_t::statecov_t statecov = {x, P, apriori->first};
+
             statecov = this->pose_lkf.correct(statecov, z, R);
+
+            x = statecov.x;
+            P = statecov.P;
+
+            x[(int)STATE::ROLL] = fixAngle(x[(int)STATE::ROLL], 0);
+            x[(int)STATE::PITCH] = fixAngle(x[(int)STATE::PITCH], 0);
+            x[(int)STATE::YAW] = fixAngle(x[(int)STATE::YAW], 0);
+
+            success = true;
         }
         catch ([[maybe_unused]] std::exception &e)
         {
             ROS_WARN("Could retrieve matrix inversion");
         }
-
-        x = statecov.x;
-        P = statecov.P;
-
-        x[(int)STATE::ROLL] = fixAngle(x[(int)STATE::ROLL], 0);
-        x[(int)STATE::PITCH] = fixAngle(x[(int)STATE::PITCH], 0);
-        x[(int)STATE::YAW] = fixAngle(x[(int)STATE::YAW], 0);
-
-        history.x = x;
-        history.P = P;
     }
     else if (history.measurement.index() == 1)
     {
@@ -259,8 +273,8 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
         {
             Eigen::Quaterniond quat;
             quat = Eigen::AngleAxisd(x[(int)STATE::YAW], Eigen::Vector3d::UnitZ()) *
-                        Eigen::AngleAxisd(x[(int)STATE::PITCH], Eigen::Vector3d::UnitY()) *
-                        Eigen::AngleAxisd(x[(int)STATE::ROLL], Eigen::Vector3d::UnitX());
+                   Eigen::AngleAxisd(x[(int)STATE::PITCH], Eigen::Vector3d::UnitY()) *
+                   Eigen::AngleAxisd(x[(int)STATE::ROLL], Eigen::Vector3d::UnitX());
 
             Eigen::Vector3d temp = Eigen::Vector3d(1, 0, 0);
 
@@ -268,7 +282,7 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
             double heading = atan2(temp(1), temp(0));
             double angle_diff = fmod(heading - z[3] + M_PI, 2 * M_PI) - M_PI;
             heading = z[3] + angle_diff;
-            
+
             kalman::beacon_ukf_t::z_t z_new = kalman::beacon_ukf_t::z_t::Zero();
             z_new << x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z], heading;
 
@@ -282,75 +296,113 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
         try
         {
             statecov = this->beacon_ukf.correct(statecov, z, R);
+
+            x((int)STATE::ROLL) = fixAngle(x((int)STATE::ROLL), 0);
+            x((int)STATE::PITCH) = fixAngle(x((int)STATE::PITCH), 0);
+            x((int)STATE::YAW) = fixAngle(x((int)STATE::YAW), 0);
+
+            x = statecov.x;
+            P = statecov.P;
+
+            success = true;
         }
         catch ([[maybe_unused]] std::exception &e)
         {
             ROS_WARN("Could retrieve matrix inversion");
         }
-
-        x((int)STATE::ROLL) = fixAngle(x((int)STATE::ROLL), 0);
-        x((int)STATE::PITCH) = fixAngle(x((int)STATE::PITCH), 0);
-        x((int)STATE::YAW) = fixAngle(x((int)STATE::YAW), 0);
-
-        x = statecov.x;
-        P = statecov.P;
-
-        history.x = x;
-        history.P = P;
     }
     else if (history.measurement.index() == 2)
     {
-        kalman::range_ukf_t::z_t z = std::get<2>(history.measurement).z;
-        kalman::range_ukf_t::R_t R = std::get<2>(history.measurement).R;
-        geometry_msgs::TransformStamped transformation = std::get<2>(history.measurement).transformation;
-
-        Eigen::Vector3d translate = Eigen::Vector3d(transformation.transform.translation.x,
-                                                    transformation.transform.translation.y,
-                                                    transformation.transform.translation.z);
-
-        auto observe_ukf_lambda = [&translate](const kalman::range_ukf_t::x_t &x) -> kalman::range_ukf_t::z_t
+        if (P_determinant < 1e-1)
         {
-            Eigen::VectorXd pose(3);
+            kalman::range_ukf_t::z_t z = std::get<2>(history.measurement).z;
+            kalman::range_ukf_t::R_t R = std::get<2>(history.measurement).R;
+            geometry_msgs::TransformStamped transformation = std::get<2>(history.measurement).transformation;
 
-            pose << x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z];
-            pose -= translate;
+            Eigen::Vector3d translate = Eigen::Vector3d(transformation.transform.translation.x,
+                                                        transformation.transform.translation.y,
+                                                        transformation.transform.translation.z);
 
-            kalman::range_ukf_t::z_t z;
-            z << pose.norm();
+            auto observe_ukf_lambda = [&translate](const kalman::range_ukf_t::x_t &x) -> kalman::range_ukf_t::z_t
+            {
+                Eigen::VectorXd pose(3);
 
-            if (z[0] < 0 or isnan(z[0]))
-                ROS_ERROR("Range is negative or NaN");
+                pose << x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z];
+                pose -= translate;
 
-            return z;
-        };
-        this->range_ukf.setObservationModel(observe_ukf_lambda);
+                kalman::range_ukf_t::z_t z;
+                z << pose.norm();
 
-        kalman::range_ukf_t::statecov_t statecov = {x, P, apriori->first};
+                if (z[0] < 0 or isnan(z[0]))
+                    ROS_ERROR("Range is negative or NaN");
 
-        try
-        {
-            statecov = this->range_ukf.correct(statecov, z, R);
+                return z;
+            };
+            this->range_ukf.setObservationModel(observe_ukf_lambda);
+
+            try
+            {
+                auto x_prev = x;
+                auto P_prev = P;
+                kalman::range_ukf_t::statecov_t statecov = {x, P, apriori->first};
+
+                statecov = this->range_ukf.correct(statecov, z, R);
+
+                x = statecov.x;
+                P = statecov.P;
+
+                Eigen::VectorXd x_diff(3);
+
+                x_diff << x[(int)STATE::X] - x_prev[(int)STATE::X],
+                    x[(int)STATE::Y] - x_prev[(int)STATE::Y],
+                    x[(int)STATE::Z] - x_prev[(int)STATE::Z];
+
+                if (x_diff.norm() > z(0))
+                {
+                    ROS_ERROR("Mean distance is not between new a prev position!!");
+                }
+                else
+                {
+                    success = true;
+                }
+            }
+            catch ([[maybe_unused]] std::exception &e)
+            {
+                // const Eigen::SelfAdjointEigenSolver<kalman::P_t> solver(0.5 * (statecov.P + statecov.P.transpose()));
+                // statecov.P = solver.eigenvectors() * solver.eigenvalues().cwiseMax(0).asDiagonal() * solver.eigenvectors().transpose();
+                // statecov = this->range_ukf.correct(statecov, z, R);
+                ROS_WARN("Could retrieve matrix inversion");
+            }
         }
-        catch ([[maybe_unused]] std::exception &e)
+        else
         {
-            const Eigen::SelfAdjointEigenSolver<kalman::P_t> solver(0.5 * (statecov.P + statecov.P.transpose()));
-            statecov.P = solver.eigenvectors() * solver.eigenvalues().cwiseMax(0).asDiagonal() * solver.eigenvectors().transpose();
-            statecov = this->range_ukf.correct(statecov, z, R);
-            ROS_WARN("Could retrieve matrix inversion");
+            ROS_ERROR("Covariance matrix is too large to safely fuse the data");
         }
-
-        x = statecov.x;
-        P = statecov.P;
-
-        history.x = x;
-        history.P = P;
     }
     else
     {
-        ROS_WARN("Unknown measurement type");
+        ROS_ERROR("Unknown measurement type");
     }
 
-    this->runCorrectionFrom(posteriori);
+    if (success)
+    {
+        history.x = x;
+        history.P = P;
+
+        this->runCorrectionFrom(posteriori);
+    }
+    else
+    {
+        if (history.measurement.index() == 0)
+            this->pose_count--;
+        if (history.measurement.index() == 1)
+            this->pose_count--;
+        else if (history.measurement.index() == 2)
+            this->range_count--;
+
+        this->history_map.erase(posteriori); // or "it = m.erase(it)" since C++11
+        this->runCorrectionFrom(apriori);
+    }
 
     return;
 }
@@ -566,7 +618,9 @@ int Tracker::delete_old(ros::Time deadline)
 
         if (it->second.measurement.index() == 0)
             this->pose_count--;
-        else if (it->second.measurement.index() == 1)
+        if (it->second.measurement.index() == 1)
+            this->pose_count--;
+        else if (it->second.measurement.index() == 2)
             this->range_count--;
 
         this->history_map.erase(it++); // or "it = m.erase(it)" since C++11
