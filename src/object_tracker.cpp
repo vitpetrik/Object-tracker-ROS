@@ -310,6 +310,7 @@ void beacon_callback(const uwb_range::BeaconStampedConstPtr &msg)
     else
     {
         ROS_ERROR_THROTTLE(1.0, "[OBJECT TRACKER] NaN detected in GPS coord!!!");
+        return;
     }
 
     if (std::isfinite(msg->beacon.ALT))
