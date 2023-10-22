@@ -158,6 +158,10 @@ void Tracker::initializeFilters()
                                         kalman::pose_lkf_t::B_t::Zero(),
                                         H_matrix_pose);
 
+    this->range_ekf = kalman::range_ekf_t(kalman::range_ekf_t::A_t::Identity(),
+                                          kalman::range_ekf_t::B_t::Zero(),
+                                          kalman::range_ekf_t::H_t::Identity());
+
     this->beacon_ukf = kalman::beacon_ukf_t();
     this->beacon_ukf.setConstants(1e-3, 1, 2);
 
@@ -324,36 +328,56 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
                                                         transformation.transform.translation.y,
                                                         transformation.transform.translation.z);
 
-            auto observe_ukf_lambda = [&translate](const kalman::range_ukf_t::x_t &x) -> kalman::range_ukf_t::z_t
-            {
-                Eigen::VectorXd pose(3);
+            // auto observe_ukf_lambda = [&translate](const kalman::range_ukf_t::x_t &x) -> kalman::range_ukf_t::z_t
+            // {
+            //     Eigen::VectorXd pose(3);
 
-                pose << x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z];
-                pose -= translate;
+            //     pose << x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z];
+            //     pose -= translate;
 
-                kalman::range_ukf_t::z_t z;
-                z << pose.norm();
+            //     kalman::range_ukf_t::z_t z;
+            //     z << pose.norm();
 
-                if isnan(z[0]))
-                {
-                    ROS_ERROR("Range is NaN or too small to be safe");
-                    throw std::runtime_error("Range is NaN or too small to be safe");
-                }
+            //     if isnan(z[0]))
+            //     {
+            //         ROS_ERROR("Range is NaN or too small to be safe");
+            //         throw std::runtime_error("Range is NaN or too small to be safe");
+            //     }
 
-                return z;
-            };
-            this->range_ukf.setObservationModel(observe_ukf_lambda);
+            //     return z;
+            // };
+            // this->range_ukf.setObservationModel(observe_ukf_lambda);
+
+            Eigen::VectorXd pose(3);
+
+            pose << x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z];
+            pose -= translate;
+
+            kalman::range_ekf_t::H_t H = kalman::range_ekf_t::H_t::Zero();
+
+            H(0, (int)STATE::X) = pose(0) / pose.norm();
+            H(0, (int)STATE::Y) = pose(1) / pose.norm();
+            H(0, (int)STATE::Z) = pose(2) / pose.norm();
+
+            this->range_ekf.H = H;
 
             try
             {
                 auto x_prev = x;
                 auto P_prev = P;
+                x((int)STATE::X) -= translate(0);
+                x((int)STATE::Y) -= translate(1);
+                x((int)STATE::Z) -= translate(2);
                 kalman::range_ukf_t::statecov_t statecov = {x, P, apriori->first};
 
-                statecov = this->range_ukf.correct(statecov, z, R);
+                statecov = this->range_ekf.correct(statecov, z, R);
 
                 x = statecov.x;
                 P = statecov.P;
+
+                x((int)STATE::X) += translate(0);
+                x((int)STATE::Y) += translate(1);
+                x((int)STATE::Z) += translate(2);
 
                 Eigen::Vector3d prev_pos = Eigen::Vector3d(x_prev[(int)STATE::X], x_prev[(int)STATE::Y], x_prev[(int)STATE::Z]);
                 Eigen::Vector3d new_pos = Eigen::Vector3d(x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z]);

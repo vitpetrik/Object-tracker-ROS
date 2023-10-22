@@ -38,6 +38,7 @@ namespace kalman
     using pose_lkf_t = mrs_lib::LKF<(int)STATE::STATES_NUM, 0, 6>;
     using beacon_ukf_t = mrs_lib::UKF<(int)STATE::STATES_NUM, 0, 4>;
     using range_ukf_t = mrs_lib::UKF<(int)STATE::STATES_NUM, 0, 1>;
+    using range_ekf_t = mrs_lib::LKF<(int)STATE::STATES_NUM, 0, 1>;
     using predict_lkf_t = mrs_lib::LKF<(int)STATE::STATES_NUM, 0, 6>;
 
     using A_t = predict_lkf_t::A_t;
@@ -101,6 +102,7 @@ private:
     kalman::pose_lkf_t pose_lkf;
     kalman::beacon_ukf_t beacon_ukf;
     kalman::range_ukf_t range_ukf;
+    kalman::range_ekf_t range_ekf;
     kalman::predict_lkf_t predict_lkf;
 
 
