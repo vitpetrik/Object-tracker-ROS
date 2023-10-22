@@ -334,7 +334,7 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
                 kalman::range_ukf_t::z_t z;
                 z << pose.norm();
 
-                if (z[0] < 1 or isnan(z[0]))
+                if isnan(z[0]))
                 {
                     ROS_ERROR("Range is NaN or too small to be safe");
                     throw std::runtime_error("Range is NaN or too small to be safe");
