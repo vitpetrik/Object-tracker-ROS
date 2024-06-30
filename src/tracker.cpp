@@ -86,20 +86,21 @@ Eigen::MatrixXd Q_continuous_white_noise(int dim, double dt, double spectral_den
 
 kalman::A_t transitionMatrix(double dt, int position_model, int rotation_model)
 {
-    kalman::A_t A = kalman::A_t::Zero();
+    kalman::A_t A = kalman::A_t::Identity();
 
     A.topLeftCorner(6, 6) = modelMatrix(dt, position_model);
-    A.bottomRightCorner(6, 6) = modelMatrix(dt, rotation_model);
 
     return A;
 }
 
 kalman::predict_lkf_t::Q_t processNoiseMatrix(double dt, int position_model, int rotation_model, double spectral_density_pose, double spectral_density_rotation)
 {
-    kalman::predict_lkf_t::Q_t Q = kalman::predict_lkf_t::Q_t::Zero();
+    kalman::predict_lkf_t::Q_t Q = dt*kalman::predict_lkf_t::Q_t::Identity();
 
     Q.topLeftCorner(6, 6) = Q_continuous_white_noise(position_model, dt, spectral_density_pose);
-    Q.bottomRightCorner(6, 6) = Q_continuous_white_noise(rotation_model, dt, spectral_density_rotation);
+
+    // copy upper right triangle to lower bottom triangle
+    Q.triangularView<Eigen::Lower>() = Q.transpose();
 
     return Q;
 }
@@ -162,7 +163,10 @@ void Tracker::initializeFilters()
     this->beacon_ukf.setConstants(1e-3, 1, 2);
 
     this->range_ukf = kalman::range_ukf_t();
-    this->range_ukf.setConstants(1e-3, 1, 2);
+    this->range_ukf.setConstants(1e-1, 1, 2);
+
+    this->direction_ukf = kalman::direction_ukf_t();
+    this->direction_ukf.setConstants(1e-1, 1, 2);
 
     this->predict_lkf = kalman::predict_lkf_t(kalman::predict_lkf_t::A_t::Identity(),
                                               kalman::predict_lkf_t::B_t::Zero(),
@@ -173,9 +177,16 @@ void Tracker::initializeFilters()
 
 std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time)
 {
-    std::pair<kalman::x_t, kalman::P_t> state = this->get_state();
-    kalman::x_t x = state.first;
-    kalman::P_t P = state.second;
+    history_map_t::iterator bound = this->history_map.upper_bound(time);
+
+    if (bound == this->history_map.begin())
+        return std::make_pair(kalman::x_t::Zero(), kalman::P_t::Identity());
+
+    auto correct_state = std::prev(bound);
+
+    // std::pair<kalman::x_t, kalman::P_t> state = this->get_state();
+    kalman::x_t x = correct_state->second.x;
+    kalman::P_t P = correct_state->second.P;
 
     double dt = std::fmax((time - this->get_last_correction()).toSec(), 0.0);
 
@@ -195,12 +206,16 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time)
 void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
 {
     if (std::next(apriori) == this->history_map.end())
+    {
+        ROS_INFO_STREAM("End of history map reached, no correction possible");
+        ROS_INFO("---------------------------------");
         return;
+    }
 
     bool success = false;
 
-    auto x = apriori->second.x;
-    auto P = apriori->second.P;
+    kalman::x_t x = apriori->second.x;
+    kalman::P_t P = apriori->second.P;
 
     Eigen::MatrixXd P_reduced = Eigen::MatrixXd::Zero(3, 3);
 
@@ -218,6 +233,9 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     history_t &history = posteriori->second;
     ros::Duration dt = posteriori->first - apriori->first;
 
+
+    ROS_INFO_STREAM(std::fixed << std::setprecision(3) << "Processing correction from " << apriori->first << " to " << posteriori->first << " with dt " << dt.toSec());
+
     if (0 < dt.toSec())
     {
         kalman::predict_lkf_t::statecov_t statecov = {x, P, apriori->first};
@@ -228,11 +246,18 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
                                              dt.toSec());
         x = statecov.x;
         P = statecov.P;
+
+        P = P.unaryExpr([](double x){return (abs(x)<1e-4)?0.:x;});
     }
     else if (dt.toSec() < 0)
     {
         ROS_ERROR("Time difference between measurements is Negative!");
     }
+
+    auto x_prev = x;
+    auto P_prev = P;
+
+    ROS_INFO_STREAM("Apriori x: " << x.transpose());
 
     if (history.measurement.index() == 0)
     {
@@ -247,6 +272,9 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
         {
             auto x_prev = x;
             auto P_prev = P;
+
+            ROS_INFO_STREAM("Pose measurement: " << z.transpose());
+
             kalman::pose_lkf_t::statecov_t statecov = {x, P, apriori->first};
 
             statecov = this->pose_lkf.correct(statecov, z, R);
@@ -267,6 +295,9 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     }
     else if (history.measurement.index() == 1)
     {
+        auto x_prev = x;
+        auto P_prev = P;
+
         kalman::beacon_ukf_t::z_t z = std::get<1>(history.measurement).z;
         kalman::beacon_ukf_t::R_t R = std::get<1>(history.measurement).R;
 
@@ -310,6 +341,7 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
         catch ([[maybe_unused]] std::exception &e)
         {
             ROS_WARN("Could retrieve matrix inversion");
+            success = false;
         }
     }
     else if (history.measurement.index() == 2)
@@ -342,30 +374,33 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
 
                 return z;
             };
+
             this->range_ukf.setObservationModel(observe_ukf_lambda);
-
-            try
+            // Outlier detection
+            if((observe_ukf_lambda(x) - z).norm()/dt.toSec() < 100000)
             {
-                auto x_prev = x;
-                auto P_prev = P;
-                kalman::range_ukf_t::statecov_t statecov = {x, P, apriori->first};
+                try
+                {
+                    auto x_prev = x;
+                    auto P_prev = P;
+                    kalman::range_ukf_t::statecov_t statecov = {x, P, apriori->first};
 
-                statecov = this->range_ukf.correct(statecov, z, R);
+                    statecov = this->range_ukf.correct(statecov, z, R);
 
-                x = statecov.x;
-                P = statecov.P;
+                    x = statecov.x;
+                    P = statecov.P;
 
-                Eigen::Vector3d prev_pos = Eigen::Vector3d(x_prev[(int)STATE::X], x_prev[(int)STATE::Y], x_prev[(int)STATE::Z]);
-                Eigen::Vector3d new_pos = Eigen::Vector3d(x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z]);
-
-                success = true;
+                    success = true;
+                }
+                catch ([[maybe_unused]] std::exception &e)
+                {
+                   ROS_WARN("Error in fusion of range measurement %.2f m", z[0]);
+                }
             }
-            catch ([[maybe_unused]] std::exception &e)
+            else 
             {
-                // const Eigen::SelfAdjointEigenSolver<kalman::P_t> solver(0.5 * (statecov.P + statecov.P.transpose()));
-                // statecov.P = solver.eigenvectors() * solver.eigenvalues().cwiseMax(0).asDiagonal() * solver.eigenvectors().transpose();
-                // statecov = this->range_ukf.correct(statecov, z, R);
-                ROS_WARN("Error in fusion of range measurement");
+                ROS_WARN("Range measurement is too far from prediction %.2f m %.2f", z[0], (observe_ukf_lambda(x) - z).norm()/dt.toSec());
+                success = false;
             }
         }
         else
@@ -373,13 +408,81 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
             ROS_ERROR("P matrix determinant %.2f is too large", P_determinant);
         }
     }
+    else if (history.measurement.index() == 3)
+    {
+        kalman::direction_ukf_t::z_t z = std::get<3>(history.measurement).z;
+        kalman::direction_ukf_t::R_t R = std::get<3>(history.measurement).R;
+        geometry_msgs::TransformStamped transformation = std::get<3>(history.measurement).transformation;
+
+        Eigen::Vector3d translate = Eigen::Vector3d(transformation.transform.translation.x,
+                                                    transformation.transform.translation.y,
+                                                    transformation.transform.translation.z);
+        Eigen::Quaterniond rotation = Eigen::Quaterniond(transformation.transform.rotation.w,
+                                                          transformation.transform.rotation.x,
+                                                          transformation.transform.rotation.y,
+                                                          transformation.transform.rotation.z);
+
+        rotation = rotation.inverse();
+
+        auto observe_ukf_lambda = [&translate, &rotation, &z](const kalman::direction_ukf_t::x_t &x) -> kalman::direction_ukf_t::z_t
+        {
+            Eigen::VectorXd pose(3);
+
+            pose << x[(int)STATE::X], x[(int)STATE::Y], x[(int)STATE::Z];
+            pose -= translate;
+            pose = rotation * pose;
+
+            kalman::direction_ukf_t::z_t z_new;
+
+            z_new = pose.normalized();
+            return z_new;
+        };
+
+        this->direction_ukf.setObservationModel(observe_ukf_lambda);
+
+        try
+        {
+            kalman::direction_ukf_t::statecov_t statecov = {x, P, apriori->first};
+
+            statecov = this->direction_ukf.correct(statecov, z, R);
+
+            x = statecov.x;
+            P = statecov.P;
+
+            success = true;
+        }
+        catch ([[maybe_unused]] std::exception &e)
+        {
+            // const Eigen::SelfAdjointEigenSolver<kalman::P_t> solver(0.5 * (statecov.P + statecov.P.transpose()));
+            // statecov.P = solver.eigenvectors() * solver.eigenvalues().cwiseMax(0).asDiagonal() * solver.eigenvectors().transpose();
+            // statecov = this->range_ukf.correct(statecov, z, R);
+
+            ROS_WARN("Error in fusion of Direction measurement");
+        }
+    }
     else
     {
         ROS_ERROR("Unknown measurement type");
     }
 
-    if (success)
+    if(success)
     {
+        P = P.unaryExpr([](double x){return (abs(x)<1e-4)?0.:x;});
+        const Eigen::SelfAdjointEigenSolver<kalman::P_t> solver(0.5 * (P + P.transpose()));
+        P = solver.eigenvectors() * solver.eigenvalues().cwiseMax(0).asDiagonal() * solver.eigenvectors().transpose();
+
+        Eigen::LLT<Eigen::MatrixXd> lltOfA(P); // compute the Cholesky decomposition of A
+        if(lltOfA.info() == Eigen::NumericalIssue)
+        {
+            ROS_ERROR_STREAM("Cholesky decomposition failed, P matrix is not positive definite:" << std::endl << P);
+            success = false;
+        }    
+    }
+
+    if (success and Eigen::Vector3d(x[(int)STATE::X_dt], x[(int)STATE::Y_dt], x[(int)STATE::Y_dt]).norm() < 10)
+    {
+        ROS_INFO_STREAM("Posteriori x: " << x.transpose());
+
         history.x = x;
         history.P = P;
 
@@ -387,6 +490,8 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     }
     else
     {
+        ROS_WARN("Filtering failed, not updating state and removing measurement");
+
         if (history.measurement.index() == 0)
             this->pose_count--;
         if (history.measurement.index() == 1)
@@ -415,15 +520,15 @@ std::optional<Tracker::history_map_t::iterator> Tracker::addMeasurement(ros::Tim
         return std::optional<history_map_t::iterator>(this->history_map.insert(std::make_pair(time, history)));
     }
 
-    history_map_t::iterator bound = this->history_map.lower_bound(time);
+    history_map_t::iterator bound = this->history_map.upper_bound(time);
     history_map_t::iterator apriori = this->history_map.begin();
 
     // dont add new measurements to the beginning of the map
     if (bound == this->history_map.begin())
         return std::nullopt;
 
-    apriori = std::prev(bound);
     auto it = this->history_map.insert(std::make_pair(time, history));
+    apriori = std::prev(it);
 
     this->total_count++;
 
@@ -516,6 +621,44 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalm
     return this->get_state();
 }
 
+std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalman::direction_ukf_t::z_t z, kalman::direction_ukf_t::R_t R, geometry_msgs::TransformStamped transformation)
+{
+    measurement_t measurement = {direction_measurement_t{z, R, transformation}};
+    
+    kalman::x_t x = kalman::x_t::Zero();
+    kalman::P_t P = 1000 * kalman::P_t::Identity();
+
+    Eigen::Vector3d translate = Eigen::Vector3d(transformation.transform.translation.x,
+                                        transformation.transform.translation.y,
+                                        transformation.transform.translation.z);
+    Eigen::Quaterniond rotation = Eigen::Quaterniond(transformation.transform.rotation.w,
+                                                        transformation.transform.rotation.x,
+                                                        transformation.transform.rotation.y,
+                                                        transformation.transform.rotation.z);
+
+    auto z_transformed = rotation*z + translate;
+
+    x[(int)STATE::X] = z_transformed[0];
+    x[(int)STATE::Y] = z_transformed[1];
+    x[(int)STATE::Z] = z_transformed[2];
+    x[(int)STATE::YAW] = 0;
+    x[(int)STATE::PITCH] = 0;
+    x[(int)STATE::ROLL] = 0;
+
+    P((int)STATE::X, (int)STATE::X) = R(0, 0);
+    P((int)STATE::X, (int)STATE::Y) = R(0, 1);
+    P((int)STATE::X, (int)STATE::Z) = R(0, 2);
+    P((int)STATE::Y, (int)STATE::Y) = R(1, 1);
+    P((int)STATE::Y, (int)STATE::Z) = R(1, 2);
+    P((int)STATE::Z, (int)STATE::Z) = R(2, 2);
+
+    P.triangularView<Eigen::Lower>() = P.transpose();
+    
+    auto it = this->addMeasurement(time, measurement, x, P);
+
+    return this->get_state();
+}
+
 geometry_msgs::PoseWithCovariance Tracker::get_PoseWithCovariance(kalman::x_t x, kalman::P_t P_full)
 {
     geometry_msgs::PoseWithCovariance pose;
@@ -550,9 +693,9 @@ geometry_msgs::TwistWithCovariance Tracker::get_TwistWithCovariance(kalman::x_t 
     twist.twist.linear.y = x[(int)STATE::Y_dt];
     twist.twist.linear.z = x[(int)STATE::Z_dt];
 
-    twist.twist.angular.x = x[(int)STATE::ROLL_dt];
-    twist.twist.angular.y = x[(int)STATE::PITCH_dt];
-    twist.twist.angular.z = x[(int)STATE::YAW_dt];
+    twist.twist.angular.x = 0;
+    twist.twist.angular.y = 0;
+    twist.twist.angular.z = 0;
 
     twist.covariance = eigenCovarianceToRos(P);
 

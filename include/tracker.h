@@ -38,6 +38,7 @@ namespace kalman
     using pose_lkf_t = mrs_lib::LKF<(int)STATE::STATES_NUM, 0, 6>;
     using beacon_ukf_t = mrs_lib::UKF<(int)STATE::STATES_NUM, 0, 4>;
     using range_ukf_t = mrs_lib::UKF<(int)STATE::STATES_NUM, 0, 1>;
+    using direction_ukf_t = mrs_lib::UKF<(int)STATE::STATES_NUM, 0, 3>;
     using predict_lkf_t = mrs_lib::LKF<(int)STATE::STATES_NUM, 0, 6>;
 
     using A_t = predict_lkf_t::A_t;
@@ -72,7 +73,15 @@ private:
         geometry_msgs::TransformStamped transformation;
     };
 
-    typedef std::variant<pose_measurement_t, beacon_measurement_t, range_measurement_t> measurement_t;
+    struct direction_measurement_t
+    {
+        kalman::direction_ukf_t::z_t z;
+        kalman::direction_ukf_t::R_t R;
+
+        geometry_msgs::TransformStamped transformation;
+    };
+
+    typedef std::variant<pose_measurement_t, beacon_measurement_t, range_measurement_t, direction_measurement_t> measurement_t;
 
     struct history_t
     {
@@ -101,6 +110,7 @@ private:
     kalman::pose_lkf_t pose_lkf;
     kalman::beacon_ukf_t beacon_ukf;
     kalman::range_ukf_t range_ukf;
+    kalman::direction_ukf_t direction_ukf;
     kalman::predict_lkf_t predict_lkf;
 
 
@@ -132,6 +142,8 @@ public:
 
     std::pair<kalman::x_t, kalman::P_t> addMeasurement(ros::Time, kalman::range_ukf_t::z_t, kalman::range_ukf_t::R_t, geometry_msgs::TransformStamped transformation);
 
+    std::pair<kalman::x_t, kalman::P_t> addMeasurement(ros::Time, kalman::direction_ukf_t::z_t, kalman::direction_ukf_t::R_t, geometry_msgs::TransformStamped transformation);
+
     const auto get_last_correction() const { return std::prev(history_map.end())->first; }
 
     const auto get_update_count() const { return history_map.size(); }
@@ -156,6 +168,11 @@ public:
     }
 
     geometry_msgs::TwistWithCovariance get_TwistWithCovariance(kalman::x_t, kalman::P_t);
+
+    geometry_msgs::TwistWithCovariance get_TwistWithCovariance()
+    {
+        return get_TwistWithCovariance(std::prev(history_map.end())->second.x, std::prev(history_map.end())->second.P);
+    }
 
     int delete_old(ros::Time);
 };

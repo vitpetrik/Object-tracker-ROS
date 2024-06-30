@@ -45,11 +45,8 @@ enum class STATE
     Z,
     Z_dt,
     ROLL,
-    ROLL_dt,
     PITCH,
-    PITCH_dt,
     YAW,
-    YAW_dt,
     STATES_NUM
 };
 
@@ -60,6 +57,33 @@ enum class STATE
  * @return geometry_msgs::PoseWithCovarianceStamped 
  */
 geometry_msgs::PoseWithCovarianceStamped poseIdentifiedToPoseStamped(const mrs_msgs::PoseWithCovarianceIdentified &pose);
+
+/**
+ * @brief Retrieves aviation Roll angle from a quaternion
+ *
+ * @param q The input quaternion
+ *
+ * @return The ouput angle
+ */
+double quatToRoll(Eigen::Quaterniond q);
+
+/**
+ * @brief Retrieves aviation Yaw angle from a quaternion
+ *
+ * @param q The input quaternion
+ *
+ * @return The ouput angle
+ */
+double quatToYaw(Eigen::Quaterniond q);
+
+/**
+ * @brief Retrieves aviation Pitch angle from a quaternion
+ *
+ * @param q The input quaternion
+ *
+ * @return The ouput angle
+ */
+double quatToPitch(Eigen::Quaterniond q);
 
 /**
  * @brief Changes the expression of the origAngle, such that if it is updated in a filtering process with newAngle, circularity issues will be avoided
@@ -102,6 +126,15 @@ Eigen::MatrixXd rosCovarianceToEigen(const boost::array<double, 36> input);
  * @return boost::array<double, 36> 
  */
 boost::array<double, 36> eigenCovarianceToRos(const Eigen::MatrixXd input);
+
+/**
+ * @brief return state vector and covariance reduced to order of derivative
+ *
+ * @param x state vector
+ * @param P Covariance matrix
+ * @return std::pair<Eigen::VectorXd, Eigen::MatrixXd>
+ */
+std::pair<Eigen::VectorXd, Eigen::MatrixXd> statecovReduce(const Eigen::VectorXd x, const Eigen::MatrixXd P, int order);
 
 /**
  * @brief Get pose covariance matrix from the big matrix

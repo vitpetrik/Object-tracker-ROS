@@ -220,8 +220,8 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> statecovReduce(const Eigen::VectorXd
         return std::make_pair(x, P);
     }
 
-    Eigen::VectorXd x_new = Eigen::VectorXd::Zero(6 * order);
-    Eigen::MatrixXd P_new = Eigen::MatrixXd::Zero(6 * order, 6 * order);
+    Eigen::VectorXd x_new = Eigen::VectorXd::Zero(3 * order + 3);
+    Eigen::MatrixXd P_new = Eigen::MatrixXd::Zero(3 * order + 3, 3 * order + 3);
 
     for (int i = 0; i < 6; i++)
         for (int j = 0; j < order; j++)
@@ -272,31 +272,13 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> statecovReduce(const Eigen::VectorXd
         P_new(5, 5) = P((int)STATE::Z_dt, (int)STATE::Z_dt);
         
         P_new(6, 6) = P((int)STATE::ROLL, (int)STATE::ROLL);
-        P_new(6, 7) = P((int)STATE::ROLL, (int)STATE::ROLL_dt);
         P_new(6, 8) = P((int)STATE::ROLL, (int)STATE::PITCH);
-        P_new(6, 9) = P((int)STATE::ROLL, (int)STATE::PITCH_dt);
         P_new(6, 10) = P((int)STATE::ROLL, (int)STATE::YAW);
-        P_new(6, 11) = P((int)STATE::ROLL, (int)STATE::YAW_dt);
-
-        P_new(7, 7) =  P((int)STATE::ROLL_dt, (int)STATE::ROLL_dt);
-        P_new(7, 8) =  P((int)STATE::ROLL_dt, (int)STATE::PITCH);
-        P_new(7, 9) =  P((int)STATE::ROLL_dt, (int)STATE::PITCH_dt);
-        P_new(7, 10) = P((int)STATE::ROLL_dt, (int)STATE::YAW);
-        P_new(7, 11) = P((int)STATE::ROLL_dt, (int)STATE::YAW_dt);
 
         P_new(8, 8) =  P((int)STATE::PITCH, (int)STATE::PITCH);
-        P_new(8, 9) =  P((int)STATE::PITCH, (int)STATE::PITCH_dt);
         P_new(8, 10) = P((int)STATE::PITCH, (int)STATE::YAW);
-        P_new(8, 11) = P((int)STATE::PITCH, (int)STATE::YAW_dt);
-
-        P_new(9, 9) =  P((int)STATE::PITCH_dt, (int)STATE::PITCH_dt);
-        P_new(9, 10) = P((int)STATE::PITCH_dt, (int)STATE::YAW);
-        P_new(9, 11) = P((int)STATE::PITCH_dt, (int)STATE::YAW_dt);
 
         P_new(10, 10) = P((int)STATE::YAW, (int)STATE::YAW);
-        P_new(10, 11) = P((int)STATE::YAW, (int)STATE::YAW_dt);
-
-        P_new(11, 11) = P((int)STATE::YAW_dt, (int)STATE::YAW_dt);
     }
 
     P_new.triangularView<Eigen::Lower>() = P_new.transpose();
@@ -338,7 +320,7 @@ Eigen::MatrixXd covGetPose(const Eigen::MatrixXd P)
  */
 Eigen::MatrixXd covGetVelocity(const Eigen::MatrixXd P)
 {
-    Eigen::MatrixXd P_new = Eigen::MatrixXd::Zero(6, 6);
+    Eigen::MatrixXd P_new = Eigen::MatrixXd::Zero(3, 3);
 
     P_new(0, 0) = P((int)STATE::X_dt, (int)STATE::X_dt);
     P_new(0, 1) = P((int)STATE::X_dt, (int)STATE::Y_dt);
@@ -346,12 +328,6 @@ Eigen::MatrixXd covGetVelocity(const Eigen::MatrixXd P)
     P_new(1, 1) = P((int)STATE::Y_dt, (int)STATE::Y_dt);
     P_new(1, 2) = P((int)STATE::Y_dt, (int)STATE::Z_dt);
     P_new(2, 2) = P((int)STATE::Z_dt, (int)STATE::Z_dt);
-    P_new(3, 3) = P((int)STATE::ROLL_dt, (int)STATE::ROLL_dt);
-    P_new(3, 4) = P((int)STATE::ROLL_dt, (int)STATE::PITCH_dt);
-    P_new(3, 5) = P((int)STATE::ROLL_dt, (int)STATE::YAW_dt);
-    P_new(4, 4) = P((int)STATE::PITCH_dt, (int)STATE::PITCH_dt);
-    P_new(4, 5) = P((int)STATE::PITCH_dt, (int)STATE::YAW_dt);
-    P_new(5, 5) = P((int)STATE::YAW_dt, (int)STATE::YAW_dt);
 
     P_new.triangularView<Eigen::Lower>() = P_new.transpose();
 

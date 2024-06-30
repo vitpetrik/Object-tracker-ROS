@@ -30,7 +30,7 @@
   <!-- use 0 for constant position
   use 1 for constant velocity
   use 2 for constant acceleration -->
-  <arg name="kalman_pose_model" default="0" />
+  <arg name="kalman_pose_model" default="1" />
   <arg name="kalman_rotation_model" default="0" />
 
   <arg name="spectral_density_pose" default="3" />
@@ -56,7 +56,9 @@
         <param name="use_beacon"   value="$(arg use_beacon)" />
 
         <!-- <remap from="~uvdar_in" to="~uvdar"/> -->
-        <remap from="~uvdar_in" to="uvdar/measuredPoses"/>
+        <!-- <remap from="~uvdar_in" to="uvdar/constituentHypotheses"/> -->
+        <remap from="~uvdar_in" to="uvdar/measuredPoses2"/>
+        <remap from="~direction_in" to="uvdar/measuredDirections"/>
         <remap from="~beacon_in" to="uwb_range/beacon" />
         <remap from="~uwb_in" to="uwb_range/range"/>
 
@@ -64,6 +66,7 @@
 
         <remap from="~filtered_poses" to="~filtered_poses"/>
         <remap from="~uav_status" to="mrs_uav_status/display_string" />
+        <remap from="~filtered_velocity" to="~filtered_velocity"/>
     </node>
 
     <!-- <node name="$(arg node_name)_relay_1" pkg="topic_tools" type="relay" args="uvdar/measuredPosesL $(arg node_name)/uvdar"/>
