@@ -153,12 +153,12 @@ void publishStates()
 
         msg.poses.push_back(pose_identified);
 
-        geometry_msgs::TwistStamped velocity;
-        velocity.twist = tracker->get_TwistWithCovariance(result.first, result.second).twist;
+        // geometry_msgs::TwistStamped velocity;
+        // velocity.twist = tracker->get_TwistWithCovariance(result.first, result.second).twist;
 
-        velocity.header = msg.header;
+        // velocity.header = msg.header;
 
-        publish_velocity.publish(velocity);
+        // publish_velocity.publish(velocity);
     }
 
     std_msgs::String msg_status;
@@ -614,7 +614,7 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
         tracker->set_valid();
 
         kalman::range_ukf_t::z_t z(1 * measurement.range.range);
-        kalman::range_ukf_t::R_t R(10 * measurement.variance);
+        kalman::range_ukf_t::R_t R(1 * measurement.variance);
 
         tracker->addMeasurement(stamp, z, R, transformation.value());
     }
@@ -702,15 +702,7 @@ void direction_callback(const mrs_msgs::DirectionWithCovarianceArrayStamped::Con
         kalman::direction_ukf_t::z_t z(measurement.direction.x, measurement.direction.y, measurement.direction.z);
         kalman::direction_ukf_t::R_t R;
 
-        // R << measurement.covariance[0], measurement.covariance[1], measurement.covariance[2], measurement.covariance[3];
-        // R << 1, 0, 1, 0;
-        // R *= 0.1;
-
         R << measurement.covariance[0], measurement.covariance[1], measurement.covariance[2], measurement.covariance[3], measurement.covariance[4], measurement.covariance[5], measurement.covariance[6], measurement.covariance[7], measurement.covariance[8];
-
-        R = R.unaryExpr([](double x){return (abs(x)<1e-4)?0.:x;});
-        const Eigen::SelfAdjointEigenSolver<kalman::direction_ukf_t::R_t> solver(0.5 * (R + R.transpose()));
-        R = solver.eigenvectors() * solver.eigenvalues().cwiseMax(0).asDiagonal() * solver.eigenvectors().transpose();
 
         tracker->addMeasurement(stamp, z, R, transformation.value());
     }

@@ -160,13 +160,13 @@ void Tracker::initializeFilters()
                                         H_matrix_pose);
 
     this->beacon_ukf = kalman::beacon_ukf_t();
-    this->beacon_ukf.setConstants(1e-3, 1, 2);
+    this->beacon_ukf.setConstants(1e-3, 0, 2);
 
     this->range_ukf = kalman::range_ukf_t();
-    this->range_ukf.setConstants(1e-1, 1, 2);
+    this->range_ukf.setConstants(1e-3, 0, 2);
 
     this->direction_ukf = kalman::direction_ukf_t();
-    this->direction_ukf.setConstants(1e-1, 1, 2);
+    this->direction_ukf.setConstants(1e-3, 0, 2);
 
     this->predict_lkf = kalman::predict_lkf_t(kalman::predict_lkf_t::A_t::Identity(),
                                               kalman::predict_lkf_t::B_t::Zero(),
@@ -197,6 +197,7 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::predict(ros::Time time)
     kalman::predict_lkf_t::statecov_t statecov = {x, P, time};
 
     statecov = this->predict_lkf.predict(statecov, kalman::predict_lkf_t::u_t::Zero(), processNoiseMatrix(dt, this->position_model_type, this->rotation_model_type, this->spectral_density_pose, this->spectral_density_rotation), dt);
+
     x = statecov.x;
     P = statecov.P;
 
@@ -233,7 +234,6 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     history_t &history = posteriori->second;
     ros::Duration dt = posteriori->first - apriori->first;
 
-
     ROS_INFO_STREAM(std::fixed << std::setprecision(3) << "Processing correction from " << apriori->first << " to " << posteriori->first << " with dt " << dt.toSec());
 
     if (0 < dt.toSec())
@@ -246,8 +246,6 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
                                              dt.toSec());
         x = statecov.x;
         P = statecov.P;
-
-        P = P.unaryExpr([](double x){return (abs(x)<1e-4)?0.:x;});
     }
     else if (dt.toSec() < 0)
     {
@@ -346,7 +344,7 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
     }
     else if (history.measurement.index() == 2)
     {
-        if (P_determinant < 1)
+        if (true)
         {
             kalman::range_ukf_t::z_t z = std::get<2>(history.measurement).z;
             kalman::range_ukf_t::R_t R = std::get<2>(history.measurement).R;
@@ -467,16 +465,21 @@ void Tracker::runCorrectionFrom(history_map_t::iterator apriori)
 
     if(success)
     {
-        P = P.unaryExpr([](double x){return (abs(x)<1e-4)?0.:x;});
         const Eigen::SelfAdjointEigenSolver<kalman::P_t> solver(0.5 * (P + P.transpose()));
         P = solver.eigenvectors() * solver.eigenvalues().cwiseMax(0).asDiagonal() * solver.eigenvectors().transpose();
 
-        Eigen::LLT<Eigen::MatrixXd> lltOfA(P); // compute the Cholesky decomposition of A
-        if(lltOfA.info() == Eigen::NumericalIssue)
+        for(double e = 1e-9; e <= 1e-3; e *= 1e1)
         {
+            if (Eigen::LLT<Eigen::MatrixXd>(P).info() != Eigen::NumericalIssue)
+            {
+                success = true;
+                break;
+            }
+
             ROS_ERROR_STREAM("Cholesky decomposition failed, P matrix is not positive definite:" << std::endl << P);
+            P += e*kalman::P_t::Identity();
             success = false;
-        }    
+        }
     }
 
     if (success and Eigen::Vector3d(x[(int)STATE::X_dt], x[(int)STATE::Y_dt], x[(int)STATE::Y_dt]).norm() < 10)
@@ -514,10 +517,13 @@ std::optional<Tracker::history_map_t::iterator> Tracker::addMeasurement(ros::Tim
     // Handle empty map
     if (this->history_map.empty())
     {
+        ROS_INFO("History map is empty, just inserting measurements");
+
         if (x.array().isNaN().any() or P.array().isNaN().any())
             return std::nullopt;
 
-        return std::optional<history_map_t::iterator>(this->history_map.insert(std::make_pair(time, history)));
+        auto it = this->history_map.insert(std::make_pair(time, history));
+        return std::optional<history_map_t::iterator>(it);
     }
 
     history_map_t::iterator bound = this->history_map.upper_bound(time);
@@ -536,6 +542,9 @@ std::optional<Tracker::history_map_t::iterator> Tracker::addMeasurement(ros::Tim
 
     if (distance > 5)
         ROS_INFO("Adding measurement to %d place", distance);
+
+    ROS_INFO("---------------------------------");
+    ROS_INFO_STREAM("Running kalman recursion function" << std::endl);
 
     this->runCorrectionFrom(apriori);
 
@@ -623,8 +632,9 @@ std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalm
 
 std::pair<kalman::x_t, kalman::P_t> Tracker::addMeasurement(ros::Time time, kalman::direction_ukf_t::z_t z, kalman::direction_ukf_t::R_t R, geometry_msgs::TransformStamped transformation)
 {
+    z = z.normalized();
     measurement_t measurement = {direction_measurement_t{z, R, transformation}};
-    
+
     kalman::x_t x = kalman::x_t::Zero();
     kalman::P_t P = 1000 * kalman::P_t::Identity();
 
