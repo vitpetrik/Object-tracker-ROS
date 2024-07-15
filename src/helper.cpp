@@ -320,7 +320,7 @@ Eigen::MatrixXd covGetPose(const Eigen::MatrixXd P)
  */
 Eigen::MatrixXd covGetVelocity(const Eigen::MatrixXd P)
 {
-    Eigen::MatrixXd P_new = Eigen::MatrixXd::Zero(3, 3);
+    Eigen::MatrixXd P_new = Eigen::MatrixXd::Zero(6, 6);
 
     P_new(0, 0) = P((int)STATE::X_dt, (int)STATE::X_dt);
     P_new(0, 1) = P((int)STATE::X_dt, (int)STATE::Y_dt);

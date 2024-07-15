@@ -29,6 +29,7 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <geometry_msgs/TwistWithCovarianceStamped.h>
 #include <geometry_msgs/TwistStamped.h>
+#include <nav_msgs/Odometry.h>
 
 #include <mrs_msgs/NavSatFixArrayStamped.h>
 #include <mrs_msgs/NavSatFixIdentified.h>
@@ -54,6 +55,7 @@
 #define MATCH_LEVEL_THRESHOLD_REMOVE 0.5
 
 std::unordered_map<uint64_t, std::shared_ptr<Tracker>> tracker_map;
+std::unordered_map<uint64_t, std::shared_ptr<ros::Publisher>> publisher_map;
 std::shared_ptr<mrs_lib::Transformer> transformer;
 
 ros::Publisher pose_debug;
@@ -143,8 +145,12 @@ void publishStates()
         if (not tracker->get_is_valid() and tracker->get_total_count() < MIN_MEASUREMENTS_TO_VALIDATION)
             continue;
 
-        std::pair<kalman::x_t, kalman::P_t> result = tracker->predict(msg.header.stamp);
+        if(publisher_map.count(id) == 0)
+        {
+            publisher_map[id] = std::make_shared<ros::Publisher>(ros::NodeHandle("~").advertise<nav_msgs::Odometry>("uav" + std::to_string(id), 10));
+        }
 
+        std::pair<kalman::x_t, kalman::P_t> result = tracker->predict(msg.header.stamp);
         geometry_msgs::PoseWithCovariance pose = tracker->get_PoseWithCovariance(result.first, result.second);
 
         pose_identified.id = id;
@@ -153,11 +159,15 @@ void publishStates()
 
         msg.poses.push_back(pose_identified);
 
-        // geometry_msgs::TwistStamped velocity;
-        // velocity.twist = tracker->get_TwistWithCovariance(result.first, result.second).twist;
+        nav_msgs::Odometry odom;
+        odom.header = msg.header;
+        odom.child_frame_id = "object_" + std::to_string(id);
+        odom.pose = pose;
 
-        // velocity.header = msg.header;
+        geometry_msgs::TwistStamped velocity;
+        odom.twist = tracker->get_TwistWithCovariance(result.first, result.second);
 
+        publisher_map[id]->publish(odom);
         // publish_velocity.publish(velocity);
     }
 
@@ -614,7 +624,7 @@ void range_callback(const mrs_msgs::RangeWithCovarianceArrayStamped &msg)
         tracker->set_valid();
 
         kalman::range_ukf_t::z_t z(1 * measurement.range.range);
-        kalman::range_ukf_t::R_t R(1 * measurement.variance);
+        kalman::range_ukf_t::R_t R(10*1 * measurement.variance);
 
         tracker->addMeasurement(stamp, z, R, transformation.value());
     }
@@ -704,7 +714,7 @@ void direction_callback(const mrs_msgs::DirectionWithCovarianceArrayStamped::Con
 
         R << measurement.covariance[0], measurement.covariance[1], measurement.covariance[2], measurement.covariance[3], measurement.covariance[4], measurement.covariance[5], measurement.covariance[6], measurement.covariance[7], measurement.covariance[8];
 
-        tracker->addMeasurement(stamp, z, R, transformation.value());
+        tracker->addMeasurement(stamp, z, 5*R, transformation.value());
     }
 
     return;
